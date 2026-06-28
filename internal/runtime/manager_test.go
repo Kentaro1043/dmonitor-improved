@@ -18,6 +18,19 @@ func TestConnectFormatsCallsignArguments(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "var", "www"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	pidFiles := []string{
+		filepath.Join(root, "var", "run", "dmonitor.pid"),
+		filepath.Join(root, "var", "run", "dmonitor", "pid"),
+		filepath.Join(root, "var", "tmp", "dmonitor.pid"),
+	}
+	for _, pidFile := range pidFiles {
+		if err := os.MkdirAll(filepath.Dir(pidFile), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(pidFile, []byte("999999\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DMONITOR_ARGS_FILE\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +75,11 @@ done
 	want := "JL1IZA A\n203.0.113.10\n51000\nJP1AAA A\nJP1AAA  \n"
 	if string(got) != want {
 		t.Fatalf("args = %q, want %q", got, want)
+	}
+	for _, pidFile := range pidFiles {
+		if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
+			t.Fatalf("stale pid file %s still exists, stat error = %v", pidFile, err)
+		}
 	}
 }
 

@@ -148,6 +148,7 @@ func (m *Manager) Connect(ctx context.Context, req Connection) error {
 	if err := m.Stop(ctx, "dmonitor", 15*time.Second); err != nil {
 		m.recordError(err)
 	}
+	m.cleanupPIDFiles()
 	if err := m.Start(ctx, "dmonitor", args...); err != nil {
 		return err
 	}
@@ -375,7 +376,7 @@ func qemuLibraryPath(rootfs string) string {
 }
 
 func (m *Manager) cleanupPIDFiles() {
-	for _, rel := range []string{"var/run/dmonitor.pid", "var/tmp/dmonitor.pid"} {
+	for _, rel := range []string{"var/run/dmonitor.pid", "var/run/dmonitor/pid", "var/tmp/dmonitor.pid"} {
 		_ = os.Remove(filepath.Join(m.opts.RootFS, rel))
 	}
 }
