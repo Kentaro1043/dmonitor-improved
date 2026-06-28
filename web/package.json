@@ -9,11 +9,13 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.html\""
   },
   "dependencies": {
+    "@mantine/core": "^9.4.1",
+    "@mantine/hooks": "^9.4.1",
     "@vitejs/plugin-react": "^4.3.4",
     "lucide-react": "^0.468.0",
-    "vite": "^6.0.5",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "vite": "^6.0.5"
   },
   "devDependencies": {
     "@types/react": "^19.0.2",
