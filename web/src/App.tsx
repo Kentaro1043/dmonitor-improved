@@ -167,49 +167,57 @@ export default function App() {
     {
       id: "rpt",
       icon: <Play size={16} />,
-      label: "rpt_conn",
+      label: "待受を開始",
+      description: "レピーター接続待受と状態監視を開始",
       action: () => api.post("/api/runtime/start-rpt-conn"),
     },
     {
       id: "stop-rpt",
       icon: <CircleStop size={16} />,
-      label: "stop rpt",
+      label: "待受を停止",
+      description: "待受とレピーター状態監視を停止",
       action: () => api.post("/api/runtime/stop-rpt-conn"),
     },
     {
       id: "scan",
       icon: <Search size={16} />,
-      label: "scan",
+      label: "スキャン開始",
+      description: "レピーター探索を開始",
       action: () => api.post("/api/repeater/scan/start"),
     },
     {
       id: "stop-scan",
       icon: <CircleStop size={16} />,
-      label: "stop scan",
+      label: "スキャン停止",
+      description: "レピーター探索を停止",
       action: () => api.post("/api/repeater/scan/stop"),
     },
     {
       id: "disconnect",
       icon: <Unplug size={16} />,
-      label: "disconnect",
+      label: "接続を切断",
+      description: "現在の dmonitor 接続を終了して待受へ戻す",
       action: () => api.post("/api/monitor/disconnect"),
     },
     {
       id: "update",
       icon: <Download size={16} />,
-      label: "update list",
+      label: "一覧を更新",
+      description: "公式レピーター一覧を再取得",
       action: () => api.post("/api/repeater/update"),
     },
     {
       id: "buffer-plus",
       icon: <Plus size={16} />,
-      label: "buffer",
+      label: "受信余裕 +",
+      description: "dmonitor の受信バッファを増やす",
       action: () => api.post("/api/buffer/increase"),
     },
     {
       id: "buffer-minus",
       icon: <Minus size={16} />,
-      label: "buffer",
+      label: "受信余裕 -",
+      description: "dmonitor の受信バッファを減らす",
       action: () => api.post("/api/buffer/decrease"),
     },
   ];
@@ -251,13 +259,17 @@ export default function App() {
         </SimpleGrid>
 
         <SimpleGrid cols={{ base: 1, md: 3 }}>
-          <Panel title="Runtime" icon={<Activity size={18} />}>
+          <Panel title="Operations" icon={<Activity size={18} />}>
+            <Text size="sm" c="dimmed">
+              接続・待受・レピーター一覧の更新を操作します。
+            </Text>
             <SimpleGrid cols={2} spacing="xs">
               {runtimeActions.map((item) => (
                 <Action
                   key={item.id}
                   icon={item.icon}
                   label={item.label}
+                  description={item.description}
                   busy={busy}
                   onClick={() => run(item.id, item.action)}
                 />
@@ -550,23 +562,27 @@ function Metric({
 function Action({
   icon,
   label,
+  description,
   busy,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
+  description: string;
   busy: string | null;
   onClick: () => void;
 }) {
   return (
-    <Button
-      variant="default"
-      leftSection={icon}
-      onClick={onClick}
-      disabled={busy !== null}
-    >
-      {label}
-    </Button>
+    <Tooltip label={description} openDelay={300}>
+      <Button
+        variant="default"
+        leftSection={icon}
+        onClick={onClick}
+        disabled={busy !== null}
+      >
+        {label}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -592,7 +608,14 @@ function ProcessTable({
       <Table.Tbody>
         {processes.map((process) => (
           <Table.Tr key={process.name}>
-            <Table.Td>{process.name}</Table.Td>
+            <Table.Td>
+              <Text fw={600} size="sm">
+                {processLabel(process.name)}
+              </Text>
+              <Text size="xs" c="dimmed">
+                {processDescription(process.name)}
+              </Text>
+            </Table.Td>
             <Table.Td>
               <Badge color={process.running ? "teal" : "gray"} variant="light">
                 {process.running
@@ -607,6 +630,30 @@ function ProcessTable({
         ))}
       </Table.Tbody>
     </Table>
+  );
+}
+
+function processLabel(name: string) {
+  return (
+    {
+      dmonitor: "接続中の通信",
+      rpt_conn: "待受開始処理",
+      repeater_mon: "レピーター状態監視",
+      repeater_mon_light: "レピーター状態監視",
+      repeater_scan: "レピーター探索",
+    }[name] ?? name
+  );
+}
+
+function processDescription(name: string) {
+  return (
+    {
+      dmonitor: "指定レピーターへの接続を維持",
+      rpt_conn: "待受起動時に短時間だけ実行",
+      repeater_mon: "使用中レピーターと一覧を更新",
+      repeater_mon_light: "軽量な状態監視",
+      repeater_scan: "接続可能なレピーターを探索",
+    }[name] ?? "内部プロセス"
   );
 }
 
