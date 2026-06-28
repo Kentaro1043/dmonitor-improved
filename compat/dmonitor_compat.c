@@ -46,6 +46,19 @@ static int starts_with(const char *s, const char *prefix) {
   return s && strncmp(s, prefix, strlen(prefix)) == 0;
 }
 
+static void write_all(int fd, const char *text) {
+  size_t total = strlen(text);
+  const char *cursor = text;
+  while (total > 0) {
+    ssize_t written = write(fd, cursor, total);
+    if (written <= 0) {
+      return;
+    }
+    cursor += written;
+    total -= (size_t)written;
+  }
+}
+
 static char *rewrite_path(const char *path) {
   const char *root = getenv("DMONITOR_HOST_ROOTFS");
   if (!path || !root || root[0] == '\0') {
@@ -72,7 +85,7 @@ static int open_cpuinfo(void) {
 #ifdef O_TMPFILE
   int tmp_fd = real_open_fn("/tmp", O_RDWR | O_TMPFILE, 0600);
   if (tmp_fd >= 0) {
-    write(tmp_fd, cpuinfo_text, strlen(cpuinfo_text));
+    write_all(tmp_fd, cpuinfo_text);
     lseek(tmp_fd, 0, SEEK_SET);
     return tmp_fd;
   }
@@ -83,7 +96,7 @@ static int open_cpuinfo(void) {
     return fd;
   }
   unlink(tmpl);
-  write(fd, cpuinfo_text, strlen(cpuinfo_text));
+  write_all(fd, cpuinfo_text);
   lseek(fd, 0, SEEK_SET);
   return fd;
 }
