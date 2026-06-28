@@ -31,7 +31,23 @@ button:disabled {
 }
 
 .repeaterAccordion .mantine-Accordion-control {
-  padding-block: 8px;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+
+.repeaterAccordion .mantine-Accordion-label {
+  padding: 0;
+  line-height: 1.15;
+}
+
+.repeaterAccordion .mantine-Accordion-chevron {
+  width: 18px;
+  min-width: 18px;
+  margin-inline-end: 6px;
+}
+
+.repeaterAccordion .mantine-Accordion-content {
+  padding: 4px 8px 8px;
 }
 
 .repeaterGrid {

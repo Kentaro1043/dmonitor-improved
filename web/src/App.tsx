@@ -440,11 +440,11 @@ export default function App() {
                   {repeaterGroups.map((group) => (
                     <Accordion.Item value={group.area} key={group.area}>
                       <Accordion.Control>
-                        <Group justify="space-between" pr="sm">
-                          <Text fw={700} size="sm">
+                        <Group justify="space-between" gap="xs" pr={4}>
+                          <Text fw={700} size="xs">
                             {areaLabel(group.area)}
                           </Text>
-                          <Badge variant="light" size="sm">
+                          <Badge variant="light" size="xs">
                             {group.repeaters.length}
                           </Badge>
                         </Group>
