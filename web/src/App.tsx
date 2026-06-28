@@ -36,6 +36,7 @@ import {
   Unplug,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRef } from "react";
 import type { ReactNode } from "react";
 import { api, Config, LogEntry, Repeater, Status } from "./api";
 
@@ -50,6 +51,7 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [config, setConfig] = useState<Config>(emptyConfig);
+  const configDirty = useRef(false);
   const [selected, setSelected] = useState<Repeater | null>(null);
   const [manual, setManual] = useState({
     address: "",
@@ -65,14 +67,21 @@ export default function App() {
   const processes = status?.runtime.processes ?? {};
   const processRows = Object.values(processes);
 
-  async function refresh() {
+  async function refresh(options: { syncConfig?: boolean } = {}) {
     const [nextStatus, nextLogs] = await Promise.all([
       api.status(),
       api.logs(),
     ]);
     setStatus(nextStatus);
-    setConfig(nextStatus.config);
+    if (options.syncConfig || !configDirty.current) {
+      setConfig(nextStatus.config);
+    }
     setLogs((nextLogs.logs ?? []).slice(-80).reverse());
+  }
+
+  function updateConfig(patch: Partial<Config>) {
+    configDirty.current = true;
+    setConfig((current) => ({ ...current, ...patch }));
   }
 
   async function run(label: string, action: () => Promise<unknown>) {
@@ -89,7 +98,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    refresh().catch((err) =>
+    refresh({ syncConfig: true }).catch((err) =>
       setError(err instanceof Error ? err.message : String(err)),
     );
     const id = window.setInterval(() => refresh().catch(() => undefined), 5000);
@@ -117,7 +126,11 @@ export default function App() {
 
   function submitConfig(event: FormEvent) {
     event.preventDefault();
-    void run("save", () => api.saveConfig(config));
+    void run("save", async () => {
+      const saved = await api.saveConfig(config);
+      configDirty.current = false;
+      setConfig(saved);
+    });
   }
 
   function connect(event: FormEvent) {
@@ -223,7 +236,7 @@ export default function App() {
   ];
 
   return (
-    <Container size="xl" py="md">
+    <Container fluid py="md" px={{ base: "sm", md: "lg" }}>
       <Stack gap="md">
         <Group justify="space-between" align="flex-start">
           <div>
@@ -258,244 +271,240 @@ export default function App() {
           ))}
         </SimpleGrid>
 
-        <SimpleGrid cols={{ base: 1, md: 3 }}>
-          <Panel title="Operations" icon={<Activity size={18} />}>
-            <Text size="sm" c="dimmed">
-              接続・待受・レピーター一覧の更新を操作します。
-            </Text>
-            <SimpleGrid cols={2} spacing="xs">
-              {runtimeActions.map((item) => (
-                <Action
-                  key={item.id}
-                  icon={item.icon}
-                  label={item.label}
-                  description={item.description}
-                  busy={busy}
-                  onClick={() => run(item.id, item.action)}
-                />
-              ))}
-            </SimpleGrid>
-            <ProcessTable processes={processRows} />
-            <Text size="xs" c="dimmed">
-              {status?.device.message}
-            </Text>
-            {!status?.device.dstarExists && (
-              <Text size="xs" c="dimmed">
-                {status?.udevHint}
-              </Text>
-            )}
-          </Panel>
-
-          <Paper
-            component="form"
-            withBorder
-            p="md"
-            radius="md"
-            onSubmit={connect}
-          >
-            <PanelHeader icon={<Radio size={18} />} title="Connect" />
-            <Stack gap="xs">
-              <TextInput
-                label="Address"
-                value={manual.address}
-                onChange={(event) =>
-                  setManual({ ...manual, address: event.currentTarget.value })
-                }
-                required
-              />
-              <TextInput
-                label="Port"
-                value={manual.port}
-                onChange={(event) =>
-                  setManual({ ...manual, port: event.currentTarget.value })
-                }
-              />
-              <TextInput
-                label="Area callsign"
-                value={manual.areaCallsign}
-                onChange={(event) =>
-                  setManual({
-                    ...manual,
-                    areaCallsign: event.currentTarget.value.toUpperCase(),
-                  })
-                }
-                required
-              />
-              <TextInput
-                label="Zone callsign"
-                value={manual.zoneCallsign}
-                onChange={(event) =>
-                  setManual({
-                    ...manual,
-                    zoneCallsign: event.currentTarget.value.toUpperCase(),
-                  })
-                }
-              />
-              <Button
-                type="submit"
-                leftSection={<Play size={16} />}
-                disabled={busy !== null}
-              >
-                Connect
-              </Button>
-            </Stack>
-          </Paper>
-
-          <Paper
-            component="form"
-            withBorder
-            p="md"
-            radius="md"
-            onSubmit={submitConfig}
-          >
-            <PanelHeader icon={<Settings size={18} />} title="Config" />
-            <Stack gap="xs">
-              <Select
-                label="Rig"
-                data={["ICOM"]}
-                value={config.rig}
-                onChange={(value) =>
-                  setConfig({ ...config, rig: value ?? "ICOM" })
-                }
-              />
-              <Select
-                label="LCD"
-                data={["NONE"]}
-                value={config.lcd}
-                onChange={(value) =>
-                  setConfig({ ...config, lcd: value ?? "NONE" })
-                }
-              />
-              <TextInput
-                label="Callsign"
-                value={config.callsign}
-                maxLength={8}
-                onChange={(event) =>
-                  setConfig({
-                    ...config,
-                    callsign: event.currentTarget.value.toUpperCase(),
-                  })
-                }
-              />
-              <Switch
-                label="GPS skip"
-                checked={config.gpsSkipMode === "SKIP"}
-                onChange={(event) =>
-                  setConfig({
-                    ...config,
-                    gpsSkipMode: event.currentTarget.checked
-                      ? "SKIP"
-                      : "NO_SKIP",
-                  })
-                }
-              />
-              <Button
-                type="submit"
-                leftSection={<Save size={16} />}
-                disabled={busy !== null}
-              >
-                Save
-              </Button>
-            </Stack>
-          </Paper>
-        </SimpleGrid>
-
-        <Panel title="Repeaters" icon={<Search size={18} />}>
-          <Stack gap="sm">
-            {activeRepeaters.length > 0 && (
-              <ScrollArea type="auto" offsetScrollbars>
-                <Group wrap="nowrap" gap="xs">
-                  {activeRepeaters.map((repeater, idx) => (
-                    <Card
-                      key={`active-${repeater.areaCallsign}-${idx}`}
-                      withBorder
-                      padding="sm"
-                      radius="md"
-                      miw={180}
-                      component="button"
-                      onClick={() => setSelected(repeater)}
-                    >
-                      <Text fw={700} size="sm">
-                        {repeater.areaCallsign}
-                      </Text>
-                      <Text size="xs" c="dimmed" truncate>
-                        {displayRepeaterName(repeater)}
-                      </Text>
-                    </Card>
-                  ))}
-                </Group>
-              </ScrollArea>
-            )}
-
-            {repeaterGroups.length === 0 ? (
-              <Text size="sm" c="dimmed">
-                No repeater data
-              </Text>
-            ) : (
-              <Accordion
-                multiple
-                defaultValue={repeaterGroups
-                  .slice(0, 1)
-                  .map((group) => group.area)}
-              >
-                {repeaterGroups.map((group) => (
-                  <Accordion.Item value={group.area} key={group.area}>
-                    <Accordion.Control>
-                      <Group justify="space-between" pr="sm">
-                        <Text fw={700}>{areaLabel(group.area)}</Text>
-                        <Badge variant="light">{group.repeaters.length}</Badge>
-                      </Group>
-                    </Accordion.Control>
-                    <Accordion.Panel>
-                      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
-                        {group.repeaters.map((repeater, idx) => (
-                          <RepeaterCard
-                            key={`${repeater.areaCallsign}-${idx}`}
-                            repeater={repeater}
-                            selected={selected === repeater}
-                            onClick={() => setSelected(repeater)}
-                          />
-                        ))}
-                      </SimpleGrid>
-                    </Accordion.Panel>
-                  </Accordion.Item>
+        <div className="workspaceGrid">
+          <Stack gap="md" className="controlPane">
+            <Panel title="Operations" icon={<Activity size={18} />}>
+              <SimpleGrid cols={2} spacing="xs">
+                {runtimeActions.map((item) => (
+                  <Action
+                    key={item.id}
+                    icon={item.icon}
+                    label={item.label}
+                    description={item.description}
+                    busy={busy}
+                    onClick={() => run(item.id, item.action)}
+                  />
                 ))}
-              </Accordion>
-            )}
-          </Stack>
-        </Panel>
-
-        <Panel title="Logs" icon={<Activity size={18} />}>
-          <ScrollArea h={360} type="auto" offsetScrollbars>
-            <Stack gap="xs">
-              {logs.map((entry, idx) => (
-                <Paper
-                  key={`${entry.time}-${idx}`}
-                  p="xs"
-                  radius="sm"
-                  withBorder
-                >
-                  <Group gap="xs" align="flex-start" wrap="nowrap">
-                    <Text size="xs" c="dimmed" w={160}>
-                      {entry.time.replace("T", " ").replace("Z", "")}
-                    </Text>
-                    <Badge variant="light" color="gray" miw={100}>
-                      {entry.source}
-                    </Badge>
-                    <Text className="logMessage" size="xs">
-                      {entry.message}
-                    </Text>
-                  </Group>
-                </Paper>
-              ))}
-              {logs.length === 0 && (
-                <Text size="sm" c="dimmed">
-                  No logs
+              </SimpleGrid>
+              <ProcessTable processes={processRows} />
+              <Text size="xs" c="dimmed">
+                {status?.device.message}
+              </Text>
+              {!status?.device.dstarExists && (
+                <Text size="xs" c="dimmed">
+                  {status?.udevHint}
                 </Text>
               )}
+            </Panel>
+
+            <Paper
+              component="form"
+              withBorder
+              p="md"
+              radius="md"
+              onSubmit={connect}
+            >
+              <PanelHeader icon={<Radio size={18} />} title="Connect" />
+              <Stack gap="xs">
+                <TextInput
+                  label="Address"
+                  value={manual.address}
+                  onChange={(event) =>
+                    setManual({ ...manual, address: event.currentTarget.value })
+                  }
+                  required
+                />
+                <TextInput
+                  label="Port"
+                  value={manual.port}
+                  onChange={(event) =>
+                    setManual({ ...manual, port: event.currentTarget.value })
+                  }
+                />
+                <TextInput
+                  label="Area callsign"
+                  value={manual.areaCallsign}
+                  onChange={(event) =>
+                    setManual({
+                      ...manual,
+                      areaCallsign: event.currentTarget.value.toUpperCase(),
+                    })
+                  }
+                  required
+                />
+                <TextInput
+                  label="Zone callsign"
+                  value={manual.zoneCallsign}
+                  onChange={(event) =>
+                    setManual({
+                      ...manual,
+                      zoneCallsign: event.currentTarget.value.toUpperCase(),
+                    })
+                  }
+                />
+                <Button
+                  type="submit"
+                  leftSection={<Play size={16} />}
+                  disabled={busy !== null}
+                >
+                  Connect
+                </Button>
+              </Stack>
+            </Paper>
+
+            <Paper
+              component="form"
+              withBorder
+              p="md"
+              radius="md"
+              onSubmit={submitConfig}
+            >
+              <PanelHeader icon={<Settings size={18} />} title="Config" />
+              <Stack gap="xs">
+                <Select
+                  label="Rig"
+                  data={["ICOM"]}
+                  value={config.rig}
+                  onChange={(value) => updateConfig({ rig: value ?? "ICOM" })}
+                />
+                <Select
+                  label="LCD"
+                  data={["NONE"]}
+                  value={config.lcd}
+                  onChange={(value) => updateConfig({ lcd: value ?? "NONE" })}
+                />
+                <TextInput
+                  label="Callsign"
+                  value={config.callsign}
+                  maxLength={8}
+                  onChange={(event) =>
+                    updateConfig({
+                      callsign: event.currentTarget.value.toUpperCase(),
+                    })
+                  }
+                />
+                <Switch
+                  label="GPS skip"
+                  checked={config.gpsSkipMode === "SKIP"}
+                  onChange={(event) =>
+                    updateConfig({
+                      gpsSkipMode: event.currentTarget.checked
+                        ? "SKIP"
+                        : "NO_SKIP",
+                    })
+                  }
+                />
+                <Button
+                  type="submit"
+                  leftSection={<Save size={16} />}
+                  disabled={busy !== null}
+                >
+                  Save
+                </Button>
+              </Stack>
+            </Paper>
+
+            <Panel title="Logs" icon={<Activity size={18} />}>
+              <ScrollArea h={300} type="auto" offsetScrollbars>
+                <Stack gap="xs">
+                  {logs.map((entry, idx) => (
+                    <Paper
+                      key={`${entry.time}-${idx}`}
+                      p="xs"
+                      radius="sm"
+                      withBorder
+                    >
+                      <Group gap="xs" align="flex-start" wrap="nowrap">
+                        <Text size="xs" c="dimmed" w={160}>
+                          {entry.time.replace("T", " ").replace("Z", "")}
+                        </Text>
+                        <Badge variant="light" color="gray" miw={100}>
+                          {entry.source}
+                        </Badge>
+                        <Text className="logMessage" size="xs">
+                          {entry.message}
+                        </Text>
+                      </Group>
+                    </Paper>
+                  ))}
+                  {logs.length === 0 && (
+                    <Text size="sm" c="dimmed">
+                      No logs
+                    </Text>
+                  )}
+                </Stack>
+              </ScrollArea>
+            </Panel>
+          </Stack>
+
+          <Panel title="Repeaters" icon={<Search size={18} />}>
+            <Stack gap="sm">
+              {activeRepeaters.length > 0 && (
+                <ScrollArea type="auto" offsetScrollbars>
+                  <Group wrap="nowrap" gap="xs" className="activeRepeaterRow">
+                    {activeRepeaters.map((repeater, idx) => (
+                      <Card
+                        key={`active-${repeater.areaCallsign}-${idx}`}
+                        withBorder
+                        padding="xs"
+                        radius="sm"
+                        miw={150}
+                        component="button"
+                        onClick={() => setSelected(repeater)}
+                      >
+                        <Text fw={700} size="xs">
+                          {repeater.areaCallsign}
+                        </Text>
+                        <Text size="xs" c="dimmed" truncate>
+                          {displayRepeaterName(repeater)}
+                        </Text>
+                      </Card>
+                    ))}
+                  </Group>
+                </ScrollArea>
+              )}
+
+              {repeaterGroups.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  No repeater data
+                </Text>
+              ) : (
+                <Accordion
+                  multiple
+                  defaultValue={repeaterGroups.map((group) => group.area)}
+                  className="repeaterAccordion"
+                >
+                  {repeaterGroups.map((group) => (
+                    <Accordion.Item value={group.area} key={group.area}>
+                      <Accordion.Control>
+                        <Group justify="space-between" pr="sm">
+                          <Text fw={700} size="sm">
+                            {areaLabel(group.area)}
+                          </Text>
+                          <Badge variant="light" size="sm">
+                            {group.repeaters.length}
+                          </Badge>
+                        </Group>
+                      </Accordion.Control>
+                      <Accordion.Panel>
+                        <div className="repeaterGrid">
+                          {group.repeaters.map((repeater, idx) => (
+                            <RepeaterCard
+                              key={`${repeater.areaCallsign}-${idx}`}
+                              repeater={repeater}
+                              selected={selected === repeater}
+                              onClick={() => setSelected(repeater)}
+                            />
+                          ))}
+                        </div>
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  ))}
+                </Accordion>
+              )}
             </Stack>
-          </ScrollArea>
-        </Panel>
+          </Panel>
+        </div>
       </Stack>
     </Container>
   );
@@ -669,8 +678,9 @@ function RepeaterCard({
   return (
     <Card
       withBorder
-      padding="sm"
-      radius="md"
+      padding="xs"
+      radius="sm"
+      className="repeaterCard"
       component="button"
       onClick={onClick}
       style={{
@@ -679,21 +689,22 @@ function RepeaterCard({
         background: selected ? "var(--mantine-color-teal-0)" : undefined,
       }}
     >
-      <Group justify="space-between" gap="xs" wrap="nowrap">
-        <Text fw={700} truncate>
+      <Group justify="space-between" gap={4} wrap="nowrap">
+        <Text fw={700} size="xs" truncate>
           {repeater.areaCallsign || "unknown"}
         </Text>
         <Badge
           color={repeater.active ? "teal" : statusColor(repeater.status)}
           variant="light"
+          size="xs"
         >
           {repeater.active ? "active" : repeater.status || "idle"}
         </Badge>
       </Group>
-      <Text size="sm" fw={600} truncate mt={4}>
+      <Text size="xs" fw={600} truncate mt={2}>
         {displayRepeaterName(repeater)}
       </Text>
-      <Group gap="xs" mt={6}>
+      <Group gap={6} mt={2} wrap="nowrap">
         <Text size="xs" c="dimmed">
           {repeater.address || "no address"}
         </Text>

@@ -20,10 +20,52 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-md);
+}
+
+.controlPane {
+  min-width: 0;
+}
+
+.repeaterAccordion .mantine-Accordion-control {
+  padding-block: 8px;
+}
+
+.repeaterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+}
+
+.repeaterCard {
+  min-width: 0;
+  text-align: left;
+}
+
+.activeRepeaterRow {
+  padding-bottom: 2px;
+}
+
 .logMessage {
   min-width: 0;
   flex: 1;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+@media (min-width: 1180px) {
+  .workspaceGrid {
+    align-items: start;
+    grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1500px) {
+  .repeaterGrid {
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  }
 }
