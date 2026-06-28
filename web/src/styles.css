@@ -45,6 +45,25 @@ button:disabled {
   text-align: left;
 }
 
+.repeaterMeta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.repeaterAddress {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repeaterPort {
+  white-space: nowrap;
+}
+
 .activeRepeaterRow {
   padding-bottom: 2px;
 }

@@ -667,14 +667,20 @@ function RepeaterCard({
       <Text size="xs" fw={600} truncate mt={2}>
         {displayRepeaterName(repeater)}
       </Text>
-      <Group gap={6} mt={2} wrap="nowrap">
-        <Text size="xs" c="dimmed">
+      <div className="repeaterMeta">
+        <Text
+          size="xs"
+          c="dimmed"
+          component="span"
+          className="repeaterAddress"
+          title={repeater.address || "no address"}
+        >
           {repeater.address || "no address"}
         </Text>
-        <Text size="xs" c="dimmed">
+        <Text size="xs" c="dimmed" component="span" className="repeaterPort">
           {repeater.port || "51000"}
         </Text>
-      </Group>
+      </div>
     </Card>
   );
 }
