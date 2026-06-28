@@ -1,6 +1,10 @@
 package runtime
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestParseRepeaterText(t *testing.T) {
 	got := parseRepeaterText(`<tr><td>JP1AAA A</td><td>JP1AAA G</td><td>203.0.113.10</td><td>51000</td></tr>`)
@@ -37,5 +41,39 @@ func TestParseMonitorLinks(t *testing.T) {
 	}
 	if got[0].AreaCallsign != "JP1AAA A" || got[0].Address != "203.0.113.10" || got[0].Port != "51000" || got[0].ZoneCallsign != "JP1AAA" {
 		t.Fatalf("unexpected repeater: %+v", got[0])
+	}
+}
+
+func TestParseRepeatersPrefersMonitorNamesAndActiveStatus(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var", "tmp"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "var", "www"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	monitor := `<a href="/cgi-bin/monitor?ip_addr=27.91.220.53&port=51000&callsign='JP1YCD A'&rep_name='世田谷430'&zr_call='JP1YCD  '" target="cmd1">JP1YCD A</a>`
+	active := `<a href="/cgi-bin/monitor?ip_addr=27.91.220.53&port=51000&callsign='JP1YCD A'&rep_name='世田谷430'&zr_call='JP1YCD  '" target="cmd1">JP1YCD A</a>`
+	repeaterJSON := `{"Connected Table":[{"callsign":"JP1YCD A","ip_address":"27.91.220.53","port":51000,"status":"off","area":"1","zr_call":"JP1YCD  "}]}`
+	if err := os.WriteFile(filepath.Join(root, "var", "tmp", "repeater_mon.temp"), []byte(monitor), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "var", "tmp", "repeater_active.temp"), []byte(active), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "var", "www", "repeater.json"), []byte(repeaterJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ParseRepeaters(root)
+	if len(got) != 1 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if got[0].Name != "世田谷430" || got[0].Area != "1" || !got[0].Active || got[0].Status != "active" {
+		t.Fatalf("unexpected repeater: %+v", got[0])
+	}
+	activeRepeaters := ParseActiveRepeaters(root)
+	if len(activeRepeaters) != 1 || !activeRepeaters[0].Active {
+		t.Fatalf("active repeaters = %+v", activeRepeaters)
 	}
 }

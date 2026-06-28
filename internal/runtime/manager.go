@@ -50,6 +50,7 @@ type Snapshot struct {
 	Connection *Connection             `json:"connection,omitempty"`
 	LastError  string                  `json:"lastError,omitempty"`
 	Repeaters  []Repeater              `json:"repeaters"`
+	Active     []Repeater              `json:"activeRepeaters"`
 }
 
 func NewManager(opts Options) *Manager {
@@ -72,6 +73,14 @@ func (m *Manager) Snapshot() Snapshot {
 	for name, proc := range m.procs {
 		processes[name] = proc.State()
 	}
+	for _, name := range managedProcessNames {
+		if _, ok := processes[name]; ok {
+			continue
+		}
+		if state := m.unmanagedProcessState(name); state.Running {
+			processes[name] = state
+		}
+	}
 	return Snapshot{
 		RootFS:     m.opts.RootFS,
 		QEMUPath:   m.opts.QEMUPath,
@@ -79,6 +88,7 @@ func (m *Manager) Snapshot() Snapshot {
 		Connection: cloneConnection(m.current),
 		LastError:  m.lastErr,
 		Repeaters:  ParseRepeaters(m.opts.RootFS),
+		Active:     ParseActiveRepeaters(m.opts.RootFS),
 	}
 }
 
@@ -229,10 +239,14 @@ func (m *Manager) SignalDMonitor(sig syscall.Signal) error {
 	m.mu.Lock()
 	proc := m.procs["dmonitor"]
 	m.mu.Unlock()
-	if proc == nil {
+	if proc != nil && proc.isRunning() {
+		return proc.Signal(sig)
+	}
+	pids := findExecutablePIDs(m.binPath("dmonitor"))
+	if len(pids) == 0 {
 		return m.recordError(errors.New("dmonitor is not running"))
 	}
-	return proc.Signal(sig)
+	return signalPIDs(pids, sig)
 }
 
 func (m *Manager) Start(_ context.Context, name string, args ...string) error {
@@ -259,7 +273,7 @@ func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = os.Environ()
 	cmd.Dir = filepath.Join(m.opts.RootFS, "var", "www")
-	proc := newManagedProcess(name, cmd, m.logs)
+	proc := newManagedProcess(name, cmd, bin, m.logs)
 
 	m.mu.Lock()
 	old := m.procs[name]
@@ -267,6 +281,9 @@ func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 	m.mu.Unlock()
 	if old != nil {
 		_ = old.Stop(5 * time.Second)
+	}
+	if err := stopPIDs(findExecutablePIDs(bin), 2*time.Second); err != nil {
+		return m.recordError(err)
 	}
 	if err := proc.Start(); err != nil {
 		return m.recordError(err)
@@ -278,10 +295,12 @@ func (m *Manager) Stop(_ context.Context, name string, timeout time.Duration) er
 	m.mu.Lock()
 	proc := m.procs[name]
 	m.mu.Unlock()
-	if proc == nil {
-		return nil
+	if proc != nil {
+		if err := proc.Stop(timeout); err != nil {
+			return m.recordError(err)
+		}
 	}
-	if err := proc.Stop(timeout); err != nil {
+	if err := stopPIDs(findExecutablePIDs(m.binPath(name)), timeout); err != nil {
 		return m.recordError(err)
 	}
 	return nil
@@ -380,6 +399,20 @@ func (m *Manager) cleanupPIDFiles() {
 	for _, rel := range []string{"var/run/dmonitor.pid", "var/run/dmonitor/pid", "var/tmp/dmonitor.pid"} {
 		_ = os.Remove(filepath.Join(m.opts.RootFS, rel))
 	}
+}
+
+var managedProcessNames = []string{"dmonitor", "rpt_conn", "repeater_scan", "repeater_mon", "repeater_mon_light"}
+
+func (m *Manager) binPath(name string) string {
+	return filepath.Join(m.opts.RootFS, "usr", "bin", name)
+}
+
+func (m *Manager) unmanagedProcessState(name string) ProcessState {
+	pids := findExecutablePIDs(m.binPath(name))
+	if len(pids) == 0 {
+		return ProcessState{Name: name}
+	}
+	return ProcessState{Name: name, PID: pids[0], Running: true}
 }
 
 func (m *Manager) recordError(err error) error {

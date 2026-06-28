@@ -20,7 +20,10 @@ export type Repeater = {
   zoneCallsign?: string;
   address?: string;
   port?: string;
+  status?: string;
+  area?: string;
   name?: string;
+  active?: boolean;
   raw: string;
 };
 
@@ -39,6 +42,7 @@ export type Status = {
     };
     lastError?: string;
     repeaters?: Repeater[];
+    activeRepeaters?: Repeater[];
   };
   device: {
     dstarExists: boolean;

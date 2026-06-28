@@ -39,6 +39,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const repeaters = status?.runtime.repeaters ?? [];
+  const activeRepeaters = status?.runtime.activeRepeaters ?? [];
   const processes = status?.runtime.processes ?? {};
 
   async function refresh() {
@@ -86,6 +87,7 @@ export default function App() {
     () => Object.values(processes).filter((p) => p.running).length,
     [processes],
   );
+  const repeaterGroups = useMemo(() => groupRepeatersByArea(repeaters), [repeaters]);
 
   function submitConfig(event: FormEvent) {
     event.preventDefault();
@@ -152,7 +154,7 @@ export default function App() {
         <Metric
           icon={<Search size={18} />}
           label="Repeaters"
-          value={`${repeaters.length}`}
+          value={`${repeaters.length} / ${activeRepeaters.length} active`}
           tone={repeaters.length > 0 ? "ok" : "idle"}
         />
       </section>
@@ -346,21 +348,49 @@ export default function App() {
             <Search size={18} />
             <h2>Repeaters</h2>
           </div>
-          <div className="repeaterList">
-            {repeaters.map((repeater, idx) => (
-              <button
-                key={`${repeater.areaCallsign}-${idx}`}
-                className={selected === repeater ? "row selected" : "row"}
-                onClick={() => setSelected(repeater)}
-              >
-                <strong>{repeater.areaCallsign || "unknown"}</strong>
-                <span>{repeater.address || "no address"}</span>
-                <span>{repeater.port || "51000"}</span>
-              </button>
+          {activeRepeaters.length > 0 && (
+            <div className="activeStrip">
+              {activeRepeaters.map((repeater, idx) => (
+                <button
+                  key={`active-${repeater.areaCallsign}-${idx}`}
+                  className="activeRepeater"
+                  onClick={() => setSelected(repeater)}
+                >
+                  <strong>{repeater.areaCallsign}</strong>
+                  <span>{displayRepeaterName(repeater)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="areaGroups">
+            {repeaterGroups.map((group) => (
+              <section className="areaGroup" key={group.area}>
+                <header>
+                  <h3>{areaLabel(group.area)}</h3>
+                  <span>{group.repeaters.length}</span>
+                </header>
+                <div className="repeaterList">
+                  {group.repeaters.map((repeater, idx) => (
+                    <button
+                      key={`${repeater.areaCallsign}-${idx}`}
+                      className={selected === repeater ? "row selected" : "row"}
+                      onClick={() => setSelected(repeater)}
+                    >
+                      <strong>{repeater.areaCallsign || "unknown"}</strong>
+                      <span className="repeaterName">
+                        {displayRepeaterName(repeater)}
+                      </span>
+                      <span className={repeater.active ? "badge active" : "badge"}>
+                        {repeater.active ? "active" : repeater.status || "idle"}
+                      </span>
+                      <span>{repeater.address || "no address"}</span>
+                      <span>{repeater.port || "51000"}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             ))}
-            {repeaters.length === 0 && (
-              <p className="empty">No repeater data</p>
-            )}
+            {repeaters.length === 0 && <p className="empty">No repeater data</p>}
           </div>
         </div>
 
@@ -383,6 +413,37 @@ export default function App() {
       </section>
     </main>
   );
+}
+
+function groupRepeatersByArea(repeaters: Repeater[]) {
+  const groups = new Map<string, Repeater[]>();
+  for (const repeater of repeaters) {
+    const area = repeater.area || areaFromCallsign(repeater.areaCallsign) || "?";
+    groups.set(area, [...(groups.get(area) ?? []), repeater]);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => areaSortValue(a) - areaSortValue(b))
+    .map(([area, grouped]) => ({ area, repeaters: grouped }));
+}
+
+function areaFromCallsign(callsign: string) {
+  return callsign.replace(/\s+/g, "").match(/\d/)?.[0] ?? "";
+}
+
+function areaSortValue(area: string) {
+  if (area === "?") return 99;
+  if (area === "0") return 10;
+  return Number(area);
+}
+
+function areaLabel(area: string) {
+  return area === "?" ? "Unknown" : `${area} area`;
+}
+
+function displayRepeaterName(repeater: Repeater) {
+  const name = (repeater.name ?? "").trim();
+  if (!name || name === repeater.areaCallsign) return "no name";
+  return name;
 }
 
 function Metric({
@@ -446,7 +507,7 @@ function ProcessTable({
               {process.running
                 ? "running"
                 : process.exitCode === 0
-                  ? "completed"
+                  ? "finished"
                   : "stopped"}
             </td>
             <td>{process.pid ?? process.exitCode ?? ""}</td>

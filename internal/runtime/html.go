@@ -27,6 +27,7 @@ type Repeater struct {
 	Status       string `json:"status,omitempty"`
 	Area         string `json:"area,omitempty"`
 	Name         string `json:"name,omitempty"`
+	Active       bool   `json:"active"`
 	Raw          string `json:"raw"`
 }
 
@@ -49,13 +50,13 @@ func EnsureCompatibilityFiles(rootfs string) error {
 
 func ParseRepeaters(rootfs string) []Repeater {
 	names := parseRepeaterNames(rootfs)
-	if repeaters := parseRepeaterJSONFile(filepath.Join(rootfs, "var", "www", "repeater.json"), names); len(repeaters) > 0 {
-		return repeaters
-	}
+	jsonRepeaters := parseRepeaterJSONFile(filepath.Join(rootfs, "var", "www", "repeater.json"), names)
+	jsonByKey := repeaterMap(jsonRepeaters)
+	activeByKey := repeaterMap(ParseActiveRepeaters(rootfs))
 
 	paths := []string{
-		filepath.Join(rootfs, "var", "tmp", "repeater_mon.html"),
 		filepath.Join(rootfs, "var", "tmp", "repeater_mon.temp"),
+		filepath.Join(rootfs, "var", "tmp", "repeater_mon.html"),
 		filepath.Join(rootfs, "var", "www", "rpt_mast.txt"),
 	}
 	for _, path := range paths {
@@ -64,11 +65,43 @@ func ParseRepeaters(rootfs string) []Repeater {
 			repeaters := parseRepeaterText(string(b))
 			if len(repeaters) > 0 {
 				enrichRepeaterNames(repeaters, names)
+				enrichRepeaterMetadata(repeaters, jsonByKey, activeByKey)
 				return repeaters
 			}
 		}
 	}
-	return nil
+	enrichRepeaterMetadata(jsonRepeaters, nil, activeByKey)
+	return jsonRepeaters
+}
+
+func ParseActiveRepeaters(rootfs string) []Repeater {
+	names := parseRepeaterNames(rootfs)
+	for _, path := range []string{
+		filepath.Join(rootfs, "var", "tmp", "repeater_active.temp"),
+		filepath.Join(rootfs, "var", "tmp", "repeater_active.html"),
+		filepath.Join(rootfs, "var", "tmp", "connected_table.html"),
+	} {
+		b, err := os.ReadFile(path)
+		if err != nil || len(b) == 0 {
+			continue
+		}
+		if strings.Contains(string(b), "ありません") {
+			return []Repeater{}
+		}
+		repeaters := parseRepeaterText(string(b))
+		if len(repeaters) == 0 {
+			continue
+		}
+		enrichRepeaterNames(repeaters, names)
+		for idx := range repeaters {
+			repeaters[idx].Active = true
+			if repeaters[idx].Status == "" {
+				repeaters[idx].Status = "active"
+			}
+		}
+		return repeaters
+	}
+	return []Repeater{}
 }
 
 func parseRepeaterText(input string) []Repeater {
@@ -126,6 +159,7 @@ func parseRepeaterLine(line string) Repeater {
 	if len(ports) > 0 {
 		r.Port = ports[0]
 	}
+	r.Area = areaFromCallsign(r.AreaCallsign)
 	r.Name = line
 	return r
 }
@@ -167,7 +201,7 @@ func parseRepeaterJSON(b []byte, names map[string]string) []Repeater {
 			Address:      strings.TrimSpace(item.IPAddress),
 			Port:         strconv.Itoa(item.Port),
 			Status:       strings.TrimSpace(item.Status),
-			Area:         strings.TrimSpace(item.Area),
+			Area:         normalizeArea(strings.TrimSpace(item.Area), item.Callsign),
 			Raw:          strings.TrimSpace(item.Callsign),
 		}
 		if item.Port == 0 {
@@ -198,6 +232,7 @@ func parseMonitorLinks(input string) []Repeater {
 			Name:         strings.Trim(values["rep_name"], "' "),
 			Raw:          match[0],
 		}
+		r.Area = areaFromCallsign(r.AreaCallsign)
 		key := r.AreaCallsign + "|" + r.Address + "|" + r.Port
 		if r.AreaCallsign == "" || r.Address == "" || seen[key] {
 			continue
@@ -250,6 +285,63 @@ func enrichRepeaterNames(repeaters []Repeater, names map[string]string) {
 			}
 		}
 	}
+}
+
+func enrichRepeaterMetadata(repeaters []Repeater, jsonByKey map[string]Repeater, activeByKey map[string]Repeater) {
+	for idx := range repeaters {
+		key := repeaterKey(repeaters[idx])
+		if meta, ok := jsonByKey[key]; ok {
+			if repeaters[idx].Status == "" {
+				repeaters[idx].Status = meta.Status
+			}
+			if repeaters[idx].Area == "" {
+				repeaters[idx].Area = meta.Area
+			}
+		}
+		if active, ok := activeByKey[key]; ok {
+			repeaters[idx].Active = true
+			if repeaters[idx].Status == "" || repeaters[idx].Status == "off" {
+				repeaters[idx].Status = "active"
+			}
+			if repeaters[idx].Name == "" {
+				repeaters[idx].Name = active.Name
+			}
+		}
+		if repeaters[idx].Area == "" {
+			repeaters[idx].Area = areaFromCallsign(repeaters[idx].AreaCallsign)
+		}
+	}
+}
+
+func repeaterMap(repeaters []Repeater) map[string]Repeater {
+	out := make(map[string]Repeater, len(repeaters))
+	for _, repeater := range repeaters {
+		if key := repeaterKey(repeater); key != "" {
+			out[key] = repeater
+		}
+	}
+	return out
+}
+
+func repeaterKey(repeater Repeater) string {
+	return normalizeRepeaterKey(repeater.AreaCallsign)
+}
+
+func normalizeArea(area, callsign string) string {
+	if area != "" {
+		return area
+	}
+	return areaFromCallsign(callsign)
+}
+
+func areaFromCallsign(callsign string) string {
+	callsign = strings.Join(strings.Fields(strings.ToUpper(callsign)), "")
+	for _, r := range callsign {
+		if r >= '0' && r <= '9' {
+			return string(r)
+		}
+	}
+	return ""
 }
 
 func normalizeRepeaterKey(value string) string {

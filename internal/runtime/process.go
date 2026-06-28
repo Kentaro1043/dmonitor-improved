@@ -27,6 +27,7 @@ type ProcessState struct {
 type managedProcess struct {
 	name      string
 	cmd       *exec.Cmd
+	exePath   string
 	logs      *RingLog
 	mu        sync.Mutex
 	startedAt time.Time
@@ -36,8 +37,8 @@ type managedProcess struct {
 	done      chan struct{}
 }
 
-func newManagedProcess(name string, cmd *exec.Cmd, logs *RingLog) *managedProcess {
-	return &managedProcess{name: name, cmd: cmd, logs: logs, done: make(chan struct{})}
+func newManagedProcess(name string, cmd *exec.Cmd, exePath string, logs *RingLog) *managedProcess {
+	return &managedProcess{name: name, cmd: cmd, exePath: exePath, logs: logs, done: make(chan struct{})}
 }
 
 func (p *managedProcess) Start() error {
@@ -176,7 +177,7 @@ func (p *managedProcess) signal(sig syscall.Signal) error {
 	if err := syscall.Kill(-process.Pid, sig); err == nil || errors.Is(err, syscall.EPERM) {
 		signaled = true
 	}
-	for _, pid := range findCommandPIDs(p.cmd.Args, process.Pid) {
+	for _, pid := range p.matchingPIDsLocked() {
 		if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return err
 		}
@@ -241,11 +242,23 @@ func (p *managedProcess) matchingPIDsLocked() []int {
 	if p.cmd.Process == nil {
 		return nil
 	}
-	return findCommandPIDs(p.cmd.Args, p.cmd.Process.Pid)
+	return findManagedPIDs(p.cmd.Args, p.exePath, p.cmd.Process.Pid)
 }
 
-func findCommandPIDs(args []string, excludePID int) []int {
-	if len(args) == 0 {
+func findManagedPIDs(args []string, exePath string, excludePID int) []int {
+	return findProcessPIDs(func(cmdline []string) bool {
+		return commandLineMatches(cmdline, args) || commandLineHasArg(cmdline, exePath)
+	}, excludePID)
+}
+
+func findExecutablePIDs(exePath string) []int {
+	return findProcessPIDs(func(cmdline []string) bool {
+		return commandLineHasArg(cmdline, exePath)
+	}, 0)
+}
+
+func findProcessPIDs(match func([]string) bool, excludePID int) []int {
+	if match == nil {
 		return nil
 	}
 	entries, err := os.ReadDir("/proc")
@@ -265,15 +278,20 @@ func findCommandPIDs(args []string, excludePID int) []int {
 		if err != nil || len(cmdline) == 0 {
 			continue
 		}
-		if commandLineMatches(cmdline, args) {
+		if processIsZombie(pid) {
+			continue
+		}
+		if match(splitCmdline(cmdline)) {
 			out = append(out, pid)
 		}
 	}
 	return out
 }
 
-func commandLineMatches(cmdline []byte, args []string) bool {
-	parts := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
+func commandLineMatches(parts []string, args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
 	if len(parts) != len(args) {
 		return false
 	}
@@ -283,6 +301,83 @@ func commandLineMatches(cmdline []byte, args []string) bool {
 		}
 	}
 	return true
+}
+
+func commandLineHasArg(parts []string, value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, part := range parts {
+		if part == value {
+			return true
+		}
+	}
+	return false
+}
+
+func splitCmdline(cmdline []byte) []string {
+	trimmed := strings.TrimRight(string(cmdline), "\x00")
+	if trimmed == "" {
+		return nil
+	}
+	return strings.Split(trimmed, "\x00")
+}
+
+func processIsZombie(pid int) bool {
+	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(string(b), ") ", 2)
+	return len(parts) == 2 && strings.HasPrefix(parts[1], "Z")
+}
+
+func signalPIDs(pids []int, sig syscall.Signal) error {
+	for _, pid := range pids {
+		if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return err
+		}
+	}
+	return nil
+}
+
+func waitPIDsStopped(pids []int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		running := false
+		for _, pid := range pids {
+			if err := syscall.Kill(pid, 0); (err == nil || errors.Is(err, syscall.EPERM)) && !processIsZombie(pid) {
+				running = true
+				break
+			}
+		}
+		if !running {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func stopPIDs(pids []int, timeout time.Duration) error {
+	if len(pids) == 0 {
+		return nil
+	}
+	_ = signalPIDs(pids, syscall.SIGINT)
+	if waitPIDsStopped(pids, timeout) {
+		return nil
+	}
+	_ = signalPIDs(pids, syscall.SIGTERM)
+	if waitPIDsStopped(pids, 2*time.Second) {
+		return nil
+	}
+	if err := signalPIDs(pids, syscall.SIGKILL); err != nil {
+		return err
+	}
+	waitPIDsStopped(pids, 500*time.Millisecond)
+	return nil
 }
 
 func (p *managedProcess) setError(err error) {

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -95,6 +96,51 @@ func TestConnectRejectsBlankConnectCallsign(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "connect callsign is required") {
 		t.Fatalf("Connect() error = %v", err)
+	}
+}
+
+func TestUnmanagedExecutableProcessIsDiscoveredAndStopped(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "usr", "bin", "dmonitor")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\ntrap 'exit 0' INT TERM\nwhile :; do sleep 1; done\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+	t.Cleanup(func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	})
+
+	manager := NewManager(Options{RootFS: root, QEMUPath: "false"})
+	var state ProcessState
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		state = manager.Snapshot().Processes["dmonitor"]
+		if state.Running && state.PID == cmd.Process.Pid {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !state.Running || state.PID != cmd.Process.Pid {
+		t.Fatalf("unmanaged process state = %+v, want pid %d running", state, cmd.Process.Pid)
+	}
+	if err := manager.Stop(context.Background(), "dmonitor", time.Second); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-waitCh:
+	case <-time.After(2 * time.Second):
+		t.Fatalf("unmanaged process pid %d is still running", cmd.Process.Pid)
 	}
 }
 
