@@ -49,7 +49,9 @@ docker compose run --rm dmonitor install-rootfs
 docker compose up
 ```
 
-UI はホスト側の `http://localhost:8080` で開きます。ID-50 などの実デバイスを使う場合は、ホスト側で `/dev/dstar` を作成してから `docker-compose.yml` の `devices` 設定を有効化してください。
+UI はホスト側の `http://localhost:8080` で開きます。Docker 実行時は dmonitor の UDP ホールパンチを Docker bridge NAT で壊さないように `network_mode: host` を使います。ID-50 などの実デバイスを使う場合は、ホスト側で `/dev/dstar` を作成してから `docker-compose.yml` の `devices` 設定を有効化してください。
+
+dmonitor の送受信が不安定な場合は、ホストOSとルーター側で UDP が遮断されていないか確認してください。dmonitor では `51000/udp` の開放で安定する場合があります。`40000/udp` はD-STARのターミナル/アクセスポイントモードの復路で使われることがありますが、dmonitor の接続先ポートは通常 `51000/udp` です。
 
 ログは標準出力に出ます。起動時に rootfs、`qemu-arm`、dmonitor 系バイナリ、互換 `LD_PRELOAD` の状態を出力します。ログレベルは `DMONITOR_LOG_LEVEL=debug|info|warn|error` で変更できます。
 
