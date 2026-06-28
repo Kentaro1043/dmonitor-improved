@@ -72,7 +72,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: () => request<Status>("/api/status"),
-  logs: () => request<{ logs: LogEntry[] }>("/api/logs"),
+  logs: () => request<{ logs: LogEntry[] | null }>("/api/logs"),
   saveConfig: (config: Config) =>
     request<Config>("/api/config", {
       method: "PUT",

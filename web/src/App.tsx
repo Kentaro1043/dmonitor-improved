@@ -48,7 +48,7 @@ export default function App() {
     ]);
     setStatus(nextStatus);
     setConfig(nextStatus.config);
-    setLogs(nextLogs.logs.slice(-80).reverse());
+    setLogs((nextLogs.logs ?? []).slice(-80).reverse());
   }
 
   async function run(label: string, action: () => Promise<unknown>) {

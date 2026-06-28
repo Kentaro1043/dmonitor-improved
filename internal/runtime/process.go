@@ -186,6 +186,9 @@ func (l *RingLog) Add(source, message string) {
 func (l *RingLog) Entries() []LogEntry {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if len(l.entries) == 0 {
+		return []LogEntry{}
+	}
 	return append([]LogEntry(nil), l.entries...)
 }
 

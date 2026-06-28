@@ -95,6 +95,9 @@ func (m *Manager) Logs() []LogEntry {
 			entries = append(entries, LogEntry{Time: time.Now().Format(time.RFC3339), Source: filepath.Base(path), Message: string(b)})
 		}
 	}
+	if len(entries) == 0 {
+		return []LogEntry{}
+	}
 	return entries
 }
 
