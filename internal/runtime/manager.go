@@ -49,8 +49,6 @@ type Snapshot struct {
 	Processes  map[string]ProcessState `json:"processes"`
 	Connection *Connection             `json:"connection,omitempty"`
 	LastError  string                  `json:"lastError,omitempty"`
-	Repeaters  []Repeater              `json:"repeaters"`
-	Active     []Repeater              `json:"activeRepeaters"`
 }
 
 func NewManager(opts Options) *Manager {
@@ -87,8 +85,6 @@ func (m *Manager) Snapshot() Snapshot {
 		Processes:  processes,
 		Connection: cloneConnection(m.current),
 		LastError:  m.lastErr,
-		Repeaters:  ParseRepeaters(m.opts.RootFS),
-		Active:     ParseActiveRepeaters(m.opts.RootFS),
 	}
 }
 

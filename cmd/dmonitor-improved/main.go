@@ -9,6 +9,7 @@ import (
 
 	"github.com/Kentaro1043/dmonitor-improved/internal/app"
 	"github.com/Kentaro1043/dmonitor-improved/internal/runtime"
+	"github.com/Kentaro1043/dmonitor-improved/internal/service"
 )
 
 func main() {
@@ -31,7 +32,7 @@ func main() {
 	})
 	defer manager.Shutdown()
 
-	server := app.NewServer(manager, *staticDir)
+	server := app.NewServer(service.New(manager), *staticDir)
 	log.Printf("listening on http://%s", *addr)
 	if err := http.ListenAndServe(*addr, server.Routes()); err != nil {
 		if !os.IsNotExist(err) {

@@ -2,26 +2,23 @@ package app
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
-	"time"
 
 	"github.com/Kentaro1043/dmonitor-improved/internal/config"
-	"github.com/Kentaro1043/dmonitor-improved/internal/device"
 	"github.com/Kentaro1043/dmonitor-improved/internal/runtime"
+	"github.com/Kentaro1043/dmonitor-improved/internal/service"
 )
 
 type Server struct {
-	manager   *runtime.Manager
+	service   *service.Service
 	staticDir string
 }
 
-func NewServer(manager *runtime.Manager, staticDir string) *Server {
-	return &Server{manager: manager, staticDir: staticDir}
+func NewServer(service *service.Service, staticDir string) *Server {
+	return &Server{service: service, staticDir: staticDir}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -44,17 +41,11 @@ func (s *Server) Routes() http.Handler {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	cfg, _ := config.Load(s.manager.RootFS())
-	writeJSON(w, http.StatusOK, map[string]any{
-		"runtime":  s.manager.Snapshot(),
-		"device":   device.Detect(),
-		"udevHint": device.UdevHint(),
-		"config":   cfg,
-	})
+	writeJSON(w, http.StatusOK, s.service.Status())
 }
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
-	cfg, err := config.Load(s.manager.RootFS())
+	cfg, err := s.service.Config()
 	if err != nil {
 		writeError(w, err)
 		return
@@ -68,7 +59,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	saved, err := config.Save(s.manager.RootFS(), cfg)
+	saved, err := s.service.SaveConfig(cfg)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -77,19 +68,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStartRPTConn(w http.ResponseWriter, r *http.Request) {
-	if err := s.manager.StartRPTConn(r.Context()); err != nil {
+	status, err := s.service.StartRPTConn(r.Context())
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleStopRPTConn(w http.ResponseWriter, r *http.Request) {
-	if err := s.manager.StopRPTConn(r.Context()); err != nil {
+	status, err := s.service.StopRPTConn(r.Context())
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
@@ -98,78 +91,70 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if strings.TrimSpace(req.Address) == "" || strings.TrimSpace(req.AreaCallsign) == "" {
-		writeError(w, errors.New("address and areaCallsign are required"))
-		return
-	}
-	req.ConnectCallsign = strings.TrimSpace(req.ConnectCallsign)
-	req.Address = strings.TrimSpace(req.Address)
-	req.Port = strings.TrimSpace(req.Port)
-	req.AreaCallsign = strings.ToUpper(strings.TrimSpace(req.AreaCallsign))
-	req.ZoneCallsign = strings.ToUpper(strings.TrimSpace(req.ZoneCallsign))
-	if err := s.manager.Connect(r.Context(), req); err != nil {
+	status, err := s.service.Connect(r.Context(), req)
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
-	if err := s.manager.Disconnect(r.Context()); err != nil {
+	status, err := s.service.Disconnect(r.Context())
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleStartScan(w http.ResponseWriter, r *http.Request) {
-	if err := s.manager.StartScan(r.Context()); err != nil {
+	status, err := s.service.StartScan(r.Context())
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleStopScan(w http.ResponseWriter, r *http.Request) {
-	if err := s.manager.StopScan(r.Context()); err != nil {
+	status, err := s.service.StopScan(r.Context())
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleUpdateRepeaters(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > 30*time.Second {
-		var cancel func()
-		ctx, cancel = contextWithTimeout(ctx, 30*time.Second)
-		defer cancel()
-	}
-	if err := s.manager.UpdateRepeaters(ctx); err != nil {
+	status, err := s.service.UpdateRepeaters(r.Context())
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleBufferIncrease(w http.ResponseWriter, r *http.Request) {
-	if err := s.manager.SignalDMonitor(syscall.SIGUSR1); err != nil {
+	status, err := s.service.IncreaseBuffer()
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleBufferDecrease(w http.ResponseWriter, r *http.Request) {
-	if err := s.manager.SignalDMonitor(syscall.SIGUSR2); err != nil {
+	status, err := s.service.DecreaseBuffer()
+	if err != nil {
 		writeError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.manager.Snapshot())
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"logs": s.manager.Logs()})
+	writeJSON(w, http.StatusOK, map[string]any{"logs": s.service.Logs()})
 }
 
 func (s *Server) staticHandler() http.Handler {
