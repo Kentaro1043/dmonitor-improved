@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -94,4 +96,101 @@ func TestConnectRejectsBlankConnectCallsign(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "connect callsign is required") {
 		t.Fatalf("Connect() error = %v", err)
 	}
+}
+
+func TestDaemonizedProcessGroupStaysManaged(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "usr", "bin", "dmonitor")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "var", "www"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	childPIDFile := filepath.Join(root, "child.pid")
+	script := `#!/bin/sh
+(trap 'exit 0' INT TERM; while :; do sleep 1; done) &
+echo $! > "$DMONITOR_CHILD_PID_FILE"
+exit 0
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	qemu := filepath.Join(root, "fake-qemu")
+	if err := os.WriteFile(qemu, []byte(`#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -L) shift 2 ;;
+    -E) shift 2 ;;
+    *) exec "$@" ;;
+  esac
+done
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DMONITOR_CHILD_PID_FILE", childPIDFile)
+
+	manager := NewManager(Options{RootFS: root, QEMUPath: qemu})
+	if err := manager.Start(context.Background(), "dmonitor"); err != nil {
+		t.Fatal(err)
+	}
+	childPID := waitForPIDFile(t, childPIDFile)
+	t.Cleanup(func() {
+		_ = syscall.Kill(childPID, syscall.SIGKILL)
+	})
+
+	var state ProcessState
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		state = manager.Snapshot().Processes["dmonitor"]
+		if state.Running && state.ExitCode == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !state.Running {
+		t.Fatalf("daemonized dmonitor is not managed as running: %+v", state)
+	}
+	if state.ExitCode != nil {
+		t.Fatalf("daemonized dmonitor exposed parent exit code: %+v", state)
+	}
+
+	if err := manager.Stop(context.Background(), "dmonitor", time.Second); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		if err := syscall.Kill(childPID, 0); errorsIsProcessDone(err) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("daemonized child pid %d is still running", childPID)
+}
+
+func waitForPIDFile(t *testing.T, path string) int {
+	t.Helper()
+	var lastErr error
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		b, err := os.ReadFile(path)
+		if err == nil {
+			pid, convErr := strconv.Atoi(strings.TrimSpace(string(b)))
+			if convErr != nil {
+				t.Fatal(convErr)
+			}
+			return pid
+		}
+		lastErr = err
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("read pid file %s: %v", path, lastErr)
+	return 0
+}
+
+func errorsIsProcessDone(err error) bool {
+	if err == nil || err == syscall.EPERM {
+		return false
+	}
+	if err == syscall.ESRCH {
+		return true
+	}
+	return false
 }

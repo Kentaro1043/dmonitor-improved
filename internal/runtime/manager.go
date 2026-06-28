@@ -256,6 +256,7 @@ func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 	cmdArgs = append(cmdArgs, "-E", "DMONITOR_HOST_ROOTFS="+m.opts.RootFS, bin)
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.Command(qemu, cmdArgs...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = os.Environ()
 	cmd.Dir = filepath.Join(m.opts.RootFS, "var", "www")
 	proc := newManagedProcess(name, cmd, m.logs)

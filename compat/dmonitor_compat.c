@@ -26,6 +26,15 @@ static const char cpuinfo_text[] =
     "Serial\t\t: 00000000dmonitor\n"
     "Model\t\t: Raspberry Pi 3 Model B Plus Rev 1.3\n";
 
+static const char os_release_text[] =
+    "PRETTY_NAME=\"Raspberry Pi OS GNU/Linux 12 (bookworm)\"\n"
+    "NAME=\"Raspberry Pi OS GNU/Linux\"\n"
+    "VERSION_ID=\"12\"\n"
+    "VERSION=\"12 (bookworm)\"\n"
+    "VERSION_CODENAME=bookworm\n"
+    "ID=raspbian\n"
+    "ID_LIKE=debian\n";
+
 static int (*real_open_fn)(const char *, int, ...) = NULL;
 static int (*real_openat_fn)(int, const char *, int, ...) = NULL;
 static FILE *(*real_fopen_fn)(const char *, const char *) = NULL;
@@ -123,23 +132,23 @@ static char *rewrite_path(const char *path) {
   return NULL;
 }
 
-static int open_cpuinfo(void) {
+static int open_text(const char *text) {
   load_symbols();
 #ifdef O_TMPFILE
   int tmp_fd = real_open_fn("/tmp", O_RDWR | O_TMPFILE, 0600);
   if (tmp_fd >= 0) {
-    write_all(tmp_fd, cpuinfo_text);
+    write_all(tmp_fd, text);
     lseek(tmp_fd, 0, SEEK_SET);
     return tmp_fd;
   }
 #endif
-  char tmpl[] = "/tmp/dmonitor-cpuinfo-XXXXXX";
+  char tmpl[] = "/tmp/dmonitor-compat-XXXXXX";
   int fd = mkstemp(tmpl);
   if (fd < 0) {
     return fd;
   }
   unlink(tmpl);
-  write_all(fd, cpuinfo_text);
+  write_all(fd, text);
   lseek(fd, 0, SEEK_SET);
   return fd;
 }
@@ -154,7 +163,10 @@ int open(const char *pathname, int flags, ...) {
     va_end(ap);
   }
   if (strcmp(pathname, "/proc/cpuinfo") == 0) {
-    return open_cpuinfo();
+    return open_text(cpuinfo_text);
+  }
+  if (strcmp(pathname, "/etc/os-release") == 0) {
+    return open_text(os_release_text);
   }
   if (strcmp(pathname, "/dev/mem") == 0 || strcmp(pathname, "/dev/gpiomem") == 0) {
     return open_dummy_gpio();
@@ -196,7 +208,10 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
       return fd;
     }
     if (strcmp(pathname, "/proc/cpuinfo") == 0) {
-      return open_cpuinfo();
+      return open_text(cpuinfo_text);
+    }
+    if (strcmp(pathname, "/etc/os-release") == 0) {
+      return open_text(os_release_text);
     }
     if (strcmp(pathname, "/dev/mem") == 0 || strcmp(pathname, "/dev/gpiomem") == 0) {
       return open_dummy_gpio();
@@ -209,6 +224,9 @@ FILE *fopen(const char *pathname, const char *mode) {
   load_symbols();
   if (pathname && strcmp(pathname, "/proc/cpuinfo") == 0) {
     return fmemopen((void *)cpuinfo_text, strlen(cpuinfo_text), mode);
+  }
+  if (pathname && strcmp(pathname, "/etc/os-release") == 0) {
+    return fmemopen((void *)os_release_text, strlen(os_release_text), mode);
   }
   char *rewritten = rewrite_path(pathname);
   if (rewritten) {

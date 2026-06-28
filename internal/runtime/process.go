@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -63,38 +64,29 @@ func (p *managedProcess) Start() error {
 }
 
 func (p *managedProcess) Stop(timeout time.Duration) error {
-	p.mu.Lock()
-	process := p.cmd.Process
-	p.mu.Unlock()
-	if process == nil {
-		return nil
-	}
 	if !p.isRunning() {
 		return nil
 	}
-	_ = process.Signal(syscall.SIGINT)
-	select {
-	case <-p.done:
+	_ = p.signal(syscall.SIGINT)
+	if p.waitStopped(timeout) {
 		return nil
-	case <-time.After(timeout):
-		_ = process.Signal(syscall.SIGTERM)
 	}
-	select {
-	case <-p.done:
+	_ = p.signal(syscall.SIGTERM)
+	if p.waitStopped(2 * time.Second) {
 		return nil
-	case <-time.After(2 * time.Second):
-		return process.Kill()
 	}
+	if err := p.signal(syscall.SIGKILL); err != nil {
+		return err
+	}
+	p.waitStopped(500 * time.Millisecond)
+	return nil
 }
 
 func (p *managedProcess) Signal(sig syscall.Signal) error {
-	p.mu.Lock()
-	process := p.cmd.Process
-	p.mu.Unlock()
-	if process == nil || !p.isRunning() {
+	if !p.isRunning() {
 		return errors.New("process is not running")
 	}
-	return process.Signal(sig)
+	return p.signal(sig)
 }
 
 func (p *managedProcess) State() ProcessState {
@@ -111,7 +103,16 @@ func (p *managedProcess) State() ProcessState {
 		state.PID = p.cmd.Process.Pid
 	}
 	state.ExitCode = p.exitCode
-	state.Running = p.exitedAt.IsZero() && p.cmd.Process != nil
+	state.Running = p.runningLocked()
+	if state.Running {
+		if pids := p.matchingPIDsLocked(); len(pids) > 0 {
+			state.PID = pids[0]
+		}
+	}
+	if state.Running && !p.exitedAt.IsZero() {
+		state.ExitedAt = ""
+		state.ExitCode = nil
+	}
 	return state
 }
 
@@ -137,6 +138,13 @@ func (p *managedProcess) wait() {
 	p.exitedAt = time.Now()
 	p.exitCode = &exitCode
 	p.mu.Unlock()
+	if exitCode == 0 {
+		if daemonPID := p.waitDaemonPID(500 * time.Millisecond); daemonPID > 0 {
+			p.logs.Add(p.name, fmt.Sprintf("daemonized pid=%d supervisor_pid=%d", daemonPID, p.cmd.Process.Pid))
+			close(p.done)
+			return
+		}
+	}
 	p.logs.Add(p.name, fmt.Sprintf("exited code=%d", exitCode))
 	close(p.done)
 }
@@ -144,7 +152,137 @@ func (p *managedProcess) wait() {
 func (p *managedProcess) isRunning() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.exitedAt.IsZero() && p.cmd.Process != nil
+	return p.runningLocked()
+}
+
+func (p *managedProcess) runningLocked() bool {
+	if p.cmd.Process == nil {
+		return false
+	}
+	if p.exitedAt.IsZero() {
+		return true
+	}
+	return processGroupRunning(p.cmd.Process.Pid) || len(p.matchingPIDsLocked()) > 0
+}
+
+func (p *managedProcess) signal(sig syscall.Signal) error {
+	p.mu.Lock()
+	process := p.cmd.Process
+	p.mu.Unlock()
+	if process == nil {
+		return errors.New("process is not running")
+	}
+	signaled := false
+	if err := syscall.Kill(-process.Pid, sig); err == nil || errors.Is(err, syscall.EPERM) {
+		signaled = true
+	}
+	for _, pid := range findCommandPIDs(p.cmd.Args, process.Pid) {
+		if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
+			return err
+		}
+		signaled = true
+	}
+	if signaled {
+		return nil
+	}
+	return process.Signal(sig)
+}
+
+func (p *managedProcess) waitStopped(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if !p.isRunning() {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func (p *managedProcess) waitDaemonPID(timeout time.Duration) int {
+	deadline := time.Now().Add(timeout)
+	for {
+		if pid := p.daemonPID(); pid > 0 {
+			return pid
+		}
+		if time.Now().After(deadline) {
+			return 0
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+func (p *managedProcess) daemonPID() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd.Process == nil {
+		return 0
+	}
+	if processGroupRunning(p.cmd.Process.Pid) {
+		return p.cmd.Process.Pid
+	}
+	if pids := p.matchingPIDsLocked(); len(pids) > 0 {
+		return pids[0]
+	}
+	return 0
+}
+
+func processGroupRunning(pgid int) bool {
+	if pgid <= 0 {
+		return false
+	}
+	err := syscall.Kill(-pgid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+func (p *managedProcess) matchingPIDsLocked() []int {
+	if p.cmd.Process == nil {
+		return nil
+	}
+	return findCommandPIDs(p.cmd.Args, p.cmd.Process.Pid)
+}
+
+func findCommandPIDs(args []string, excludePID int) []int {
+	if len(args) == 0 {
+		return nil
+	}
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var out []int
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == excludePID {
+			continue
+		}
+		cmdline, err := os.ReadFile("/proc/" + entry.Name() + "/cmdline")
+		if err != nil || len(cmdline) == 0 {
+			continue
+		}
+		if commandLineMatches(cmdline, args) {
+			out = append(out, pid)
+		}
+	}
+	return out
+}
+
+func commandLineMatches(cmdline []byte, args []string) bool {
+	parts := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
+	if len(parts) != len(args) {
+		return false
+	}
+	for i := range args {
+		if parts[i] != args[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *managedProcess) setError(err error) {

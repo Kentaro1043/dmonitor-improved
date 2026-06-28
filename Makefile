@@ -25,3 +25,4 @@ build-compat:
 
 install-rootfs:
 	$(GO) run ./cmd/dmonitor-install
+	$(MAKE) build-compat
