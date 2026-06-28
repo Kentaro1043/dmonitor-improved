@@ -34,6 +34,7 @@ const (
 
 var bootstrapDeps = []string{
 	"libc6",
+	"libcrypt1",
 	"libssl3",
 	"libusb-0.1-4",
 	"libgcc-s1",
@@ -198,6 +199,28 @@ func (i *Installer) ensureLayout() error {
 			continue
 		}
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
+	return i.fixWiringPiSymlinks()
+}
+
+func (i *Installer) fixWiringPiSymlinks() error {
+	links := map[string]string{
+		"libwiringPi.so":    "libwiringPi.so.2.52",
+		"libwiringPiDev.so": "libwiringPiDev.so.2.52",
+	}
+	libDir := filepath.Join(i.opts.RootFS, "usr", "lib")
+	for link, target := range links {
+		targetPath := filepath.Join(libDir, target)
+		if _, err := os.Stat(targetPath); err != nil {
+			continue
+		}
+		linkPath := filepath.Join(libDir, link)
+		if err := os.Remove(linkPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Symlink(target, linkPath); err != nil {
 			return err
 		}
 	}

@@ -48,6 +48,42 @@ func TestExtractTarOverwritesReadOnlyFile(t *testing.T) {
 	}
 }
 
+func TestFixWiringPiSymlinks(t *testing.T) {
+	root := t.TempDir()
+	libDir := filepath.Join(root, "usr", "lib")
+	if err := os.MkdirAll(libDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"libwiringPi.so.2.52", "libwiringPiDev.so.2.52"} {
+		if err := os.WriteFile(filepath.Join(libDir, name), []byte("elf"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("/home/pi/wiringPi/debian-template/wiringPi/usr/lib/libwiringPi.so.2.52", filepath.Join(libDir, "libwiringPi.so")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/home/pi/wiringPi/debian-template/wiringPi/usr/lib/libwiringPiDev.so.2.52", filepath.Join(libDir, "libwiringPiDev.so")); err != nil {
+		t.Fatal(err)
+	}
+
+	inst := New(Options{RootFS: root})
+	if err := inst.fixWiringPiSymlinks(); err != nil {
+		t.Fatal(err)
+	}
+	for link, want := range map[string]string{
+		"libwiringPi.so":    "libwiringPi.so.2.52",
+		"libwiringPiDev.so": "libwiringPiDev.so.2.52",
+	} {
+		got, err := os.Readlink(filepath.Join(libDir, link))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("%s -> %q, want %q", link, got, want)
+		}
+	}
+}
+
 func tarWithFile(t *testing.T, name string, mode int64, content string) []byte {
 	t.Helper()
 	var buf bytes.Buffer

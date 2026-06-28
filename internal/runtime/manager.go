@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -23,13 +24,14 @@ type Options struct {
 }
 
 type Manager struct {
-	opts    Options
-	mu      sync.Mutex
-	procs   map[string]*managedProcess
-	logs    *RingLog
-	current *Connection
-	lastErr string
-	stopMon chan struct{}
+	opts              Options
+	mu                sync.Mutex
+	procs             map[string]*managedProcess
+	logs              *RingLog
+	current           *Connection
+	lastErr           string
+	monitorLoopName   string
+	monitorLoopCancel context.CancelFunc
 }
 
 type Connection struct {
@@ -55,10 +57,9 @@ func NewManager(opts Options) *Manager {
 		opts.QEMUPath = "qemu-arm"
 	}
 	return &Manager{
-		opts:    opts,
-		procs:   make(map[string]*managedProcess),
-		logs:    NewRingLog(500),
-		stopMon: make(chan struct{}),
+		opts:  opts,
+		procs: make(map[string]*managedProcess),
+		logs:  NewRingLog(500),
 	}
 }
 
@@ -128,6 +129,9 @@ func (m *Manager) Connect(ctx context.Context, req Connection) error {
 		args = append(args, req.ZoneCallsign)
 	}
 	if err := m.Stop(ctx, "repeater_scan", 5*time.Second); err != nil {
+		m.recordError(err)
+	}
+	if err := m.Stop(ctx, "rpt_conn", 10*time.Second); err != nil {
 		m.recordError(err)
 	}
 	if err := m.Stop(ctx, "dmonitor", 15*time.Second); err != nil {
@@ -219,7 +223,7 @@ func (m *Manager) SignalDMonitor(sig syscall.Signal) error {
 	return proc.Signal(sig)
 }
 
-func (m *Manager) Start(ctx context.Context, name string, args ...string) error {
+func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 	if err := EnsureCompatibilityFiles(m.opts.RootFS); err != nil {
 		return m.recordError(err)
 	}
@@ -236,9 +240,10 @@ func (m *Manager) Start(ctx context.Context, name string, args ...string) error 
 	if preload := qemuPreloadPath(m.opts.RootFS, m.opts.GuestPreloadPath); preload != "" {
 		cmdArgs = append(cmdArgs, "-E", "LD_PRELOAD="+preload)
 	}
+	cmdArgs = append(cmdArgs, "-E", "LD_LIBRARY_PATH="+qemuLibraryPath(m.opts.RootFS))
 	cmdArgs = append(cmdArgs, "-E", "DMONITOR_HOST_ROOTFS="+m.opts.RootFS, bin)
 	cmdArgs = append(cmdArgs, args...)
-	cmd := exec.CommandContext(ctx, qemu, cmdArgs...)
+	cmd := exec.Command(qemu, cmdArgs...)
 	cmd.Env = os.Environ()
 	cmd.Dir = filepath.Join(m.opts.RootFS, "var", "www")
 	proc := newManagedProcess(name, cmd, m.logs)
@@ -270,7 +275,14 @@ func (m *Manager) Stop(_ context.Context, name string, timeout time.Duration) er
 }
 
 func (m *Manager) Shutdown() {
-	close(m.stopMon)
+	m.mu.Lock()
+	cancel := m.monitorLoopCancel
+	m.monitorLoopCancel = nil
+	m.monitorLoopName = ""
+	m.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	for _, name := range []string{"dmonitor", "rpt_conn", "repeater_scan", "repeater_mon", "repeater_mon_light"} {
 		_ = m.Stop(context.Background(), name, 5*time.Second)
 	}
@@ -281,21 +293,43 @@ func (m *Manager) startRepeaterLoop(light bool) error {
 	if light {
 		name = "repeater_mon_light"
 	}
+	m.mu.Lock()
+	if m.monitorLoopCancel != nil && m.monitorLoopName == name {
+		m.mu.Unlock()
+		return m.startIfStopped(context.Background(), name)
+	}
+	if m.monitorLoopCancel != nil {
+		m.monitorLoopCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.monitorLoopName = name
+	m.monitorLoopCancel = cancel
+	m.mu.Unlock()
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
+		_ = m.startIfStopped(context.Background(), name)
 		for {
 			select {
-			case <-m.stopMon:
+			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-				_ = m.Start(ctx, name)
-				cancel()
+				_ = m.startIfStopped(context.Background(), name)
 			}
 		}
 	}()
 	return nil
+}
+
+func (m *Manager) startIfStopped(ctx context.Context, name string) error {
+	m.mu.Lock()
+	proc := m.procs[name]
+	m.mu.Unlock()
+	if proc != nil && proc.isRunning() {
+		return nil
+	}
+	return m.Start(ctx, name)
 }
 
 func qemuPreloadPath(rootfs, preloadPath string) string {
@@ -317,6 +351,16 @@ func qemuPreloadPath(rootfs, preloadPath string) string {
 		return candidate
 	}
 	return ""
+}
+
+func qemuLibraryPath(rootfs string) string {
+	paths := []string{
+		filepath.Join(rootfs, "usr", "lib"),
+		filepath.Join(rootfs, "lib"),
+		filepath.Join(rootfs, "usr", "lib", "arm-linux-gnueabihf"),
+		filepath.Join(rootfs, "lib", "arm-linux-gnueabihf"),
+	}
+	return strings.Join(paths, ":")
 }
 
 func (m *Manager) cleanupPIDFiles() {

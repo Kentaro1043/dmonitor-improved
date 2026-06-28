@@ -442,7 +442,13 @@ function ProcessTable({
         {processes.map((process) => (
           <tr key={process.name}>
             <td>{process.name}</td>
-            <td>{process.running ? "running" : "stopped"}</td>
+            <td>
+              {process.running
+                ? "running"
+                : process.exitCode === 0
+                  ? "completed"
+                  : "stopped"}
+            </td>
             <td>{process.pid ?? process.exitCode ?? ""}</td>
           </tr>
         ))}

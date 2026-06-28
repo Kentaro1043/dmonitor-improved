@@ -31,6 +31,9 @@ static int (*real_openat_fn)(int, const char *, int, ...) = NULL;
 static FILE *(*real_fopen_fn)(const char *, const char *) = NULL;
 static void *(*real_mmap_fn)(void *, size_t, int, int, int, off_t) = NULL;
 static int (*real_system_fn)(const char *) = NULL;
+static int (*real_close_fn)(int) = NULL;
+
+static int dummy_gpio_fds[32];
 
 static void load_symbols(void) {
   if (!real_open_fn) {
@@ -39,6 +42,7 @@ static void load_symbols(void) {
     real_fopen_fn = dlsym(RTLD_NEXT, "fopen");
     real_mmap_fn = dlsym(RTLD_NEXT, "mmap");
     real_system_fn = dlsym(RTLD_NEXT, "system");
+    real_close_fn = dlsym(RTLD_NEXT, "close");
   }
 }
 
@@ -57,6 +61,45 @@ static void write_all(int fd, const char *text) {
     cursor += written;
     total -= (size_t)written;
   }
+}
+
+static void track_dummy_gpio_fd(int fd) {
+  if (fd < 0) {
+    return;
+  }
+  for (size_t i = 0; i < sizeof(dummy_gpio_fds) / sizeof(dummy_gpio_fds[0]); i++) {
+    if (dummy_gpio_fds[i] == 0) {
+      dummy_gpio_fds[i] = fd;
+      return;
+    }
+  }
+}
+
+static int is_dummy_gpio_fd(int fd) {
+  if (fd < 0) {
+    return 0;
+  }
+  for (size_t i = 0; i < sizeof(dummy_gpio_fds) / sizeof(dummy_gpio_fds[0]); i++) {
+    if (dummy_gpio_fds[i] == fd) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void untrack_dummy_gpio_fd(int fd) {
+  for (size_t i = 0; i < sizeof(dummy_gpio_fds) / sizeof(dummy_gpio_fds[0]); i++) {
+    if (dummy_gpio_fds[i] == fd) {
+      dummy_gpio_fds[i] = 0;
+    }
+  }
+}
+
+static int open_dummy_gpio(void) {
+  load_symbols();
+  int fd = real_open_fn("/dev/zero", O_RDWR, 0600);
+  track_dummy_gpio_fd(fd);
+  return fd;
 }
 
 static char *rewrite_path(const char *path) {
@@ -114,7 +157,7 @@ int open(const char *pathname, int flags, ...) {
     return open_cpuinfo();
   }
   if (strcmp(pathname, "/dev/mem") == 0 || strcmp(pathname, "/dev/gpiomem") == 0) {
-    return real_open_fn("/dev/zero", flags, mode);
+    return open_dummy_gpio();
   }
   char *rewritten = rewrite_path(pathname);
   if (rewritten) {
@@ -156,7 +199,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
       return open_cpuinfo();
     }
     if (strcmp(pathname, "/dev/mem") == 0 || strcmp(pathname, "/dev/gpiomem") == 0) {
-      return real_open_fn("/dev/zero", flags, mode);
+      return open_dummy_gpio();
     }
   }
   return real_openat_fn(dirfd, pathname, flags, mode);
@@ -182,11 +225,20 @@ FILE *fopen64(const char *pathname, const char *mode) {
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset) {
   load_symbols();
+  if (is_dummy_gpio_fd(fd)) {
+    return real_mmap_fn(addr, length, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  }
   void *mapped = real_mmap_fn(addr, length, prot, flags, fd, offset);
   if (mapped == MAP_FAILED && errno == EPERM) {
     mapped = real_mmap_fn(addr, length, prot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   }
   return mapped;
+}
+
+int close(int fd) {
+  load_symbols();
+  untrack_dummy_gpio_fd(fd);
+  return real_close_fn(fd);
 }
 
 int system(const char *command) {
