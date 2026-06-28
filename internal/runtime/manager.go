@@ -167,11 +167,23 @@ func (m *Manager) StopScan(ctx context.Context) error {
 }
 
 func (m *Manager) UpdateRepeaters(ctx context.Context) error {
-	const source = "http://log.d-star.info/usr/rpt_mast.txt"
+	if err := m.downloadFile(ctx, "http://log.d-star.info/usr/rpt_mast.txt", filepath.Join(m.opts.RootFS, "var", "www", "rpt_mast.txt")); err != nil {
+		return err
+	}
+	if err := m.downloadFile(ctx, "http://hole-punchd.d-star.info:30011/repeater.json", filepath.Join(m.opts.RootFS, "var", "www", "repeater.json")); err != nil {
+		return err
+	}
+	m.logs.Add("update", "updated rpt_mast.txt and repeater.json")
+	return nil
+}
+
+func (m *Manager) downloadFile(ctx context.Context, source, path string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Accept-Language", "ja-JP")
+	req.Header.Set("User-Agent", "dmonitor/02.00")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return m.recordError(err)
@@ -180,7 +192,6 @@ func (m *Manager) UpdateRepeaters(ctx context.Context) error {
 	if resp.StatusCode >= 300 {
 		return m.recordError(fmt.Errorf("download %s: %s", source, resp.Status))
 	}
-	path := filepath.Join(m.opts.RootFS, "var", "www", "rpt_mast.txt")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return m.recordError(err)
 	}
@@ -192,7 +203,6 @@ func (m *Manager) UpdateRepeaters(ctx context.Context) error {
 	if _, err := io.Copy(out, resp.Body); err != nil {
 		return m.recordError(err)
 	}
-	m.logs.Add("update", "updated rpt_mast.txt")
 	return nil
 }
 
