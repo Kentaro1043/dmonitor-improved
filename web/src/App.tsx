@@ -209,14 +209,14 @@ export default function App() {
     {
       id: "buffer-plus",
       icon: <Plus size={16} />,
-      label: "受信余裕 +",
+      label: "バッファ +",
       description: "dmonitor の受信バッファを増やす",
       action: () => api.post("/api/buffer/increase"),
     },
     {
       id: "buffer-minus",
       icon: <Minus size={16} />,
-      label: "受信余裕 -",
+      label: "バッファ -",
       description: "dmonitor の受信バッファを減らす",
       action: () => api.post("/api/buffer/decrease"),
     },
