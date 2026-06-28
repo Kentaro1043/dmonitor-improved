@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -21,10 +22,12 @@ type Options struct {
 	RootFS           string
 	QEMUPath         string
 	GuestPreloadPath string
+	Logger           *slog.Logger
 }
 
 type Manager struct {
 	opts              Options
+	logger            *slog.Logger
 	mu                sync.Mutex
 	procs             map[string]*managedProcess
 	logs              *RingLog
@@ -55,14 +58,43 @@ func NewManager(opts Options) *Manager {
 	if opts.QEMUPath == "" {
 		opts.QEMUPath = "qemu-arm"
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Manager{
-		opts:  opts,
-		procs: make(map[string]*managedProcess),
-		logs:  NewRingLog(500),
+		opts:   opts,
+		logger: logger,
+		procs:  make(map[string]*managedProcess),
+		logs:   NewRingLog(500),
 	}
 }
 
 func (m *Manager) RootFS() string { return m.opts.RootFS }
+
+func (m *Manager) LogInventory() {
+	qemu, qemuErr := exec.LookPath(m.opts.QEMUPath)
+	if qemuErr != nil {
+		m.logger.Error("qemu-arm not found", "qemu", m.opts.QEMUPath, "error", qemuErr)
+	} else {
+		m.logger.Info("qemu-arm found", "qemu", qemu)
+	}
+	m.logger.Info("runtime rootfs configured", "rootfs", m.opts.RootFS, "preload", m.opts.GuestPreloadPath)
+	for _, name := range managedProcessNames {
+		path := m.binPath(name)
+		st, err := os.Stat(path)
+		if err != nil {
+			m.logger.Warn("runtime binary missing", "process", name, "path", path, "error", err)
+			continue
+		}
+		m.logger.Info("runtime binary found", "process", name, "path", path, "mode", st.Mode().String(), "size", st.Size())
+	}
+	if preload := qemuPreloadPath(m.opts.RootFS, m.opts.GuestPreloadPath); preload == "" {
+		m.logger.Warn("compat preload library not found", "configured", m.opts.GuestPreloadPath)
+	} else {
+		m.logger.Info("compat preload library found", "path", preload)
+	}
+}
 
 func (m *Manager) Snapshot() Snapshot {
 	m.mu.Lock()
@@ -109,6 +141,7 @@ func (m *Manager) Logs() []LogEntry {
 }
 
 func (m *Manager) StartRPTConn(ctx context.Context) error {
+	m.logger.Info("starting standby receive", "process", "rpt_conn")
 	if err := m.Stop(ctx, "dmonitor", 15*time.Second); err != nil {
 		m.recordError(err)
 	}
@@ -119,10 +152,12 @@ func (m *Manager) StartRPTConn(ctx context.Context) error {
 }
 
 func (m *Manager) StopRPTConn(ctx context.Context) error {
+	m.logger.Info("stopping standby receive", "process", "rpt_conn")
 	return m.Stop(ctx, "rpt_conn", 10*time.Second)
 }
 
 func (m *Manager) Connect(ctx context.Context, req Connection) error {
+	m.logger.Info("connecting dmonitor", "address", req.Address, "port", req.Port, "area_callsign", req.AreaCallsign, "zone_callsign", req.ZoneCallsign)
 	if req.Port == "" {
 		req.Port = "51000"
 	}
@@ -166,6 +201,7 @@ func (m *Manager) Connect(ctx context.Context, req Connection) error {
 }
 
 func (m *Manager) Disconnect(ctx context.Context) error {
+	m.logger.Info("disconnecting dmonitor")
 	err := m.Stop(ctx, "dmonitor", 15*time.Second)
 	m.cleanupPIDFiles()
 	m.mu.Lock()
@@ -178,6 +214,7 @@ func (m *Manager) Disconnect(ctx context.Context) error {
 }
 
 func (m *Manager) StartScan(ctx context.Context) error {
+	m.logger.Info("starting repeater scan", "process", "repeater_scan")
 	if err := m.Stop(ctx, "dmonitor", 15*time.Second); err != nil {
 		m.recordError(err)
 	}
@@ -188,10 +225,12 @@ func (m *Manager) StartScan(ctx context.Context) error {
 }
 
 func (m *Manager) StopScan(ctx context.Context) error {
+	m.logger.Info("stopping repeater scan", "process", "repeater_scan")
 	return m.Stop(ctx, "repeater_scan", 10*time.Second)
 }
 
 func (m *Manager) UpdateRepeaters(ctx context.Context) error {
+	m.logger.Info("updating repeater files")
 	if err := m.downloadFile(ctx, "http://log.d-star.info/usr/rpt_mast.txt", filepath.Join(m.opts.RootFS, "var", "www", "rpt_mast.txt")); err != nil {
 		return err
 	}
@@ -199,10 +238,12 @@ func (m *Manager) UpdateRepeaters(ctx context.Context) error {
 		return err
 	}
 	m.logs.Add("update", "updated rpt_mast.txt and repeater.json")
+	m.logger.Info("updated repeater files")
 	return nil
 }
 
 func (m *Manager) downloadFile(ctx context.Context, source, path string) error {
+	m.logger.Info("downloading runtime data", "source", source, "path", path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 	if err != nil {
 		return err
@@ -228,10 +269,12 @@ func (m *Manager) downloadFile(ctx context.Context, source, path string) error {
 	if _, err := io.Copy(out, resp.Body); err != nil {
 		return m.recordError(err)
 	}
+	m.logger.Info("downloaded runtime data", "source", source, "path", path, "status", resp.Status)
 	return nil
 }
 
 func (m *Manager) SignalDMonitor(sig syscall.Signal) error {
+	m.logger.Info("signaling dmonitor", "signal", sig.String())
 	m.mu.Lock()
 	proc := m.procs["dmonitor"]
 	m.mu.Unlock()
@@ -246,21 +289,28 @@ func (m *Manager) SignalDMonitor(sig syscall.Signal) error {
 }
 
 func (m *Manager) Start(_ context.Context, name string, args ...string) error {
+	m.logger.Info("preparing runtime process", "process", name, "args", args)
 	if err := EnsureCompatibilityFiles(m.opts.RootFS); err != nil {
 		return m.recordError(err)
 	}
 	bin := filepath.Join(m.opts.RootFS, "usr", "bin", name)
-	if _, err := os.Stat(bin); err != nil {
+	binStat, err := os.Stat(bin)
+	if err != nil {
 		return m.recordError(fmt.Errorf("%s is not installed at %s", name, bin))
 	}
+	m.logger.Info("runtime binary ready", "process", name, "path", bin, "mode", binStat.Mode().String(), "size", binStat.Size())
 	qemu, err := exec.LookPath(m.opts.QEMUPath)
 	if err != nil {
 		return m.recordError(fmt.Errorf("qemu-arm not found: %w", err))
 	}
+	m.logger.Info("qemu executable ready", "process", name, "qemu", qemu)
 
 	cmdArgs := []string{"-L", m.opts.RootFS}
 	if preload := qemuPreloadPath(m.opts.RootFS, m.opts.GuestPreloadPath); preload != "" {
 		cmdArgs = append(cmdArgs, "-E", "LD_PRELOAD="+preload)
+		m.logger.Info("using compat preload", "process", name, "preload", preload)
+	} else if m.opts.GuestPreloadPath != "" {
+		m.logger.Warn("compat preload not found; starting without LD_PRELOAD", "process", name, "configured", m.opts.GuestPreloadPath)
 	}
 	cmdArgs = append(cmdArgs, "-E", "LD_LIBRARY_PATH="+qemuLibraryPath(m.opts.RootFS))
 	cmdArgs = append(cmdArgs, "-E", "DMONITOR_HOST_ROOTFS="+m.opts.RootFS, bin)
@@ -269,17 +319,21 @@ func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Env = os.Environ()
 	cmd.Dir = filepath.Join(m.opts.RootFS, "var", "www")
-	proc := newManagedProcess(name, cmd, bin, m.logs)
+	proc := newManagedProcess(name, cmd, bin, m.logs, m.logger)
 
 	m.mu.Lock()
 	old := m.procs[name]
 	m.procs[name] = proc
 	m.mu.Unlock()
 	if old != nil {
+		m.logger.Info("stopping previous managed process before restart", "process", name)
 		_ = old.Stop(5 * time.Second)
 	}
-	if err := stopPIDs(findExecutablePIDs(bin), 2*time.Second); err != nil {
-		return m.recordError(err)
+	if pids := findExecutablePIDs(bin); len(pids) > 0 {
+		m.logger.Warn("stopping unmanaged process before start", "process", name, "pids", pids)
+		if err := stopPIDs(pids, 2*time.Second); err != nil {
+			return m.recordError(err)
+		}
 	}
 	if err := proc.Start(); err != nil {
 		return m.recordError(err)
@@ -288,6 +342,7 @@ func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 }
 
 func (m *Manager) Stop(_ context.Context, name string, timeout time.Duration) error {
+	m.logger.Info("stopping runtime process", "process", name, "timeout", timeout.String())
 	m.mu.Lock()
 	proc := m.procs[name]
 	m.mu.Unlock()
@@ -296,13 +351,17 @@ func (m *Manager) Stop(_ context.Context, name string, timeout time.Duration) er
 			return m.recordError(err)
 		}
 	}
-	if err := stopPIDs(findExecutablePIDs(m.binPath(name)), timeout); err != nil {
-		return m.recordError(err)
+	if pids := findExecutablePIDs(m.binPath(name)); len(pids) > 0 {
+		m.logger.Warn("stopping unmanaged runtime process", "process", name, "pids", pids, "timeout", timeout.String())
+		if err := stopPIDs(pids, timeout); err != nil {
+			return m.recordError(err)
+		}
 	}
 	return nil
 }
 
 func (m *Manager) Shutdown() {
+	m.logger.Info("shutting down runtime manager")
 	m.mu.Lock()
 	cancel := m.monitorLoopCancel
 	m.monitorLoopCancel = nil
@@ -321,12 +380,15 @@ func (m *Manager) startRepeaterLoop(light bool) error {
 	if light {
 		name = "repeater_mon_light"
 	}
+	m.logger.Info("starting repeater monitor loop", "process", name)
 	m.mu.Lock()
 	if m.monitorLoopCancel != nil && m.monitorLoopName == name {
 		m.mu.Unlock()
+		m.logger.Info("repeater monitor loop already running", "process", name)
 		return m.startIfStopped(context.Background(), name)
 	}
 	if m.monitorLoopCancel != nil {
+		m.logger.Info("replacing repeater monitor loop", "old_process", m.monitorLoopName, "new_process", name)
 		m.monitorLoopCancel()
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -355,8 +417,10 @@ func (m *Manager) startIfStopped(ctx context.Context, name string) error {
 	proc := m.procs[name]
 	m.mu.Unlock()
 	if proc != nil && proc.isRunning() {
+		m.logger.Info("runtime process already running", "process", name)
 		return nil
 	}
+	m.logger.Info("runtime process is not running; starting", "process", name)
 	return m.Start(ctx, name)
 }
 
@@ -419,6 +483,7 @@ func (m *Manager) recordError(err error) error {
 	m.lastErr = err.Error()
 	m.mu.Unlock()
 	m.logs.Add("error", err.Error())
+	m.logger.Error("runtime error", "error", err)
 	return err
 }
 

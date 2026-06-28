@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -29,6 +30,7 @@ type managedProcess struct {
 	cmd       *exec.Cmd
 	exePath   string
 	logs      *RingLog
+	logger    *slog.Logger
 	mu        sync.Mutex
 	startedAt time.Time
 	exitedAt  time.Time
@@ -37,8 +39,11 @@ type managedProcess struct {
 	done      chan struct{}
 }
 
-func newManagedProcess(name string, cmd *exec.Cmd, exePath string, logs *RingLog) *managedProcess {
-	return &managedProcess{name: name, cmd: cmd, exePath: exePath, logs: logs, done: make(chan struct{})}
+func newManagedProcess(name string, cmd *exec.Cmd, exePath string, logs *RingLog, logger *slog.Logger) *managedProcess {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &managedProcess{name: name, cmd: cmd, exePath: exePath, logs: logs, logger: logger, done: make(chan struct{})}
 }
 
 func (p *managedProcess) Start() error {
@@ -58,6 +63,7 @@ func (p *managedProcess) Start() error {
 	p.startedAt = time.Now()
 	p.mu.Unlock()
 	p.logs.Add(p.name, fmt.Sprintf("started pid=%d command=%s", p.cmd.Process.Pid, strings.Join(p.cmd.Args, " ")))
+	p.logger.Info("runtime process started", "process", p.name, "pid", p.cmd.Process.Pid, "command", strings.Join(p.cmd.Args, " "), "dir", p.cmd.Dir)
 	go p.collect(stdout, "stdout")
 	go p.collect(stderr, "stderr")
 	go p.wait()
@@ -66,8 +72,10 @@ func (p *managedProcess) Start() error {
 
 func (p *managedProcess) Stop(timeout time.Duration) error {
 	if !p.isRunning() {
+		p.logger.Info("runtime process already stopped", "process", p.name)
 		return nil
 	}
+	p.logger.Info("stopping managed process", "process", p.name, "timeout", timeout.String())
 	_ = p.signal(syscall.SIGINT)
 	if p.waitStopped(timeout) {
 		return nil
@@ -87,6 +95,7 @@ func (p *managedProcess) Signal(sig syscall.Signal) error {
 	if !p.isRunning() {
 		return errors.New("process is not running")
 	}
+	p.logger.Info("sending signal to managed process", "process", p.name, "signal", sig.String())
 	return p.signal(sig)
 }
 
@@ -120,7 +129,16 @@ func (p *managedProcess) State() ProcessState {
 func (p *managedProcess) collect(r io.Reader, stream string) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
-		p.logs.Add(p.name+"."+stream, scanner.Text())
+		line := scanner.Text()
+		p.logs.Add(p.name+"."+stream, line)
+		if stream == "stderr" {
+			p.logger.Warn("runtime process stderr", "process", p.name, "message", line)
+		} else {
+			p.logger.Info("runtime process stdout", "process", p.name, "message", line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		p.logger.Warn("runtime process log stream error", "process", p.name, "stream", stream, "error", err)
 	}
 }
 
@@ -142,11 +160,17 @@ func (p *managedProcess) wait() {
 	if exitCode == 0 {
 		if daemonPID := p.waitDaemonPID(500 * time.Millisecond); daemonPID > 0 {
 			p.logs.Add(p.name, fmt.Sprintf("daemonized pid=%d supervisor_pid=%d", daemonPID, p.cmd.Process.Pid))
+			p.logger.Info("runtime process daemonized", "process", p.name, "pid", daemonPID, "supervisor_pid", p.cmd.Process.Pid)
 			close(p.done)
 			return
 		}
 	}
 	p.logs.Add(p.name, fmt.Sprintf("exited code=%d", exitCode))
+	if exitCode == 0 {
+		p.logger.Info("runtime process exited", "process", p.name, "exit_code", exitCode)
+	} else {
+		p.logger.Warn("runtime process exited", "process", p.name, "exit_code", exitCode, "error", err)
+	}
 	close(p.done)
 }
 
@@ -175,12 +199,14 @@ func (p *managedProcess) signal(sig syscall.Signal) error {
 	}
 	signaled := false
 	if err := syscall.Kill(-process.Pid, sig); err == nil || errors.Is(err, syscall.EPERM) {
+		p.logger.Info("sent signal to process group", "process", p.name, "pid", process.Pid, "signal", sig.String())
 		signaled = true
 	}
 	for _, pid := range p.matchingPIDsLocked() {
 		if err := syscall.Kill(pid, sig); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return err
 		}
+		p.logger.Info("sent signal to matching process", "process", p.name, "pid", pid, "signal", sig.String())
 		signaled = true
 	}
 	if signaled {

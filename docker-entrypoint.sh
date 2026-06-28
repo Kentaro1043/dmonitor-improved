@@ -15,7 +15,7 @@ copy_compat() {
 
 install_rootfs() {
   mkdir -p "$ROOTFS" "$CACHE"
-  dmonitor-install -rootfs "$ROOTFS" -cache "$CACHE" "$@"
+  dmonitor-install -rootfs "$ROOTFS" -cache "$CACHE" -log-level "${DMONITOR_LOG_LEVEL:-info}" "$@"
   copy_compat
 }
 
@@ -38,6 +38,7 @@ if [ "$#" -eq 0 ] || [ "${1#-}" != "$1" ]; then
     -qemu "${DMONITOR_QEMU:-qemu-arm}" \
     -static "${DMONITOR_STATIC:-/usr/share/dmonitor-improved/web}" \
     -preload "${DMONITOR_PRELOAD:-/usr/lib/dmonitor-compat.so}" \
+    -log-level "${DMONITOR_LOG_LEVEL:-info}" \
     "$@"
 fi
 

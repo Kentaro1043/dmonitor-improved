@@ -51,6 +51,8 @@ docker compose up
 
 UI はホスト側の `http://localhost:8080` で開きます。ID-50 などの実デバイスを使う場合は、ホスト側で `/dev/dstar` を作成してから `docker-compose.yml` の `devices` 設定を有効化してください。
 
+ログは標準出力に出ます。起動時に rootfs、`qemu-arm`、dmonitor 系バイナリ、互換 `LD_PRELOAD` の状態を出力します。ログレベルは `DMONITOR_LOG_LEVEL=debug|info|warn|error` で変更できます。
+
 Make ターゲットも用意しています。
 
 ```sh

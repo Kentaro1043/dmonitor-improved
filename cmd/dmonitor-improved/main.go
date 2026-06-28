@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,25 +18,43 @@ func main() {
 	qemu := flag.String("qemu", "qemu-arm", "qemu-arm executable")
 	staticDir := flag.String("static", filepath.Join("web", "dist"), "static UI directory")
 	preload := flag.String("preload", "/usr/lib/dmonitor-compat.so", "guest LD_PRELOAD path")
+	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
+
+	logger := newLogger(*logLevel)
 
 	absRootfs, err := filepath.Abs(*rootfs)
 	if err != nil {
-		log.Fatalf("resolve rootfs: %v", err)
+		logger.Error("resolve rootfs", "error", err)
+		os.Exit(1)
 	}
 
 	manager := runtime.NewManager(runtime.Options{
 		RootFS:           absRootfs,
 		QEMUPath:         *qemu,
 		GuestPreloadPath: *preload,
+		Logger:           logger,
 	})
 	defer manager.Shutdown()
+	manager.LogInventory()
 
 	server := app.NewServer(service.New(manager), *staticDir)
-	log.Printf("listening on http://%s", *addr)
+	logger.Info("starting server", "addr", *addr, "static_dir", *staticDir)
 	if err := http.ListenAndServe(*addr, server.Routes()); err != nil {
 		if !os.IsNotExist(err) {
-			log.Fatal(err)
+			logger.Error("server stopped", "error", err)
+			os.Exit(1)
 		}
 	}
+}
+
+func newLogger(level string) *slog.Logger {
+	var parsed slog.Level
+	if err := parsed.UnmarshalText([]byte(level)); err != nil {
+		parsed = slog.LevelInfo
+	}
+	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: parsed})
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+	return logger
 }
