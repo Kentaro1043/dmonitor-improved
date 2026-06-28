@@ -1,0 +1,7 @@
+/runtime/
+/web/dist/
+/web/node_modules/
+/web/tsconfig.tsbuildinfo
+*.test
+*.out
+*.log

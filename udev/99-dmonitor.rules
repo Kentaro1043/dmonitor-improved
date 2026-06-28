@@ -1,0 +1,5 @@
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="dstar", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0c26", ATTRS{idProduct}=="0036", SYMLINK+="dstar", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0c26", ATTRS{idProduct}=="003a", SYMLINK+="dstar", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0c26", ATTRS{idProduct}=="0046", SYMLINK+="dstar", MODE="0666"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0c26", ATTRS{idProduct}=="004c", SYMLINK+="dstar", MODE="0666"
