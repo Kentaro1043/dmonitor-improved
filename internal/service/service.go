@@ -43,8 +43,8 @@ func (s *Service) Status() Status {
 	return Status{
 		Runtime: RuntimeStatus{
 			Snapshot:  s.manager.Snapshot(),
-			Repeaters: repeater.ParseRepeaters(s.manager.RootFS()),
-			Active:    repeater.ParseActiveRepeaters(s.manager.RootFS()),
+			Repeaters: nonNilRepeaters(repeater.ParseRepeaters(s.manager.RootFS())),
+			Active:    nonNilRepeaters(repeater.ParseActiveRepeaters(s.manager.RootFS())),
 		},
 		Device:   device.Detect(),
 		UdevHint: device.UdevHint(),
@@ -138,4 +138,11 @@ func (s *Service) DecreaseBuffer() (Status, error) {
 
 func (s *Service) Logs() []runtime.LogEntry {
 	return s.manager.Logs()
+}
+
+func nonNilRepeaters(in []repeater.Repeater) []repeater.Repeater {
+	if in == nil {
+		return []repeater.Repeater{}
+	}
+	return in
 }

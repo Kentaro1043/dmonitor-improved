@@ -34,6 +34,31 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
+## Docker
+
+Docker イメージには公式 dmonitor の deb、展開済み rootfs、公式バイナリは含めません。初回起動時に公式配布元から取得し、`dmonitor-rootfs` volume に展開します。
+
+```sh
+docker compose up --build
+```
+
+明示的に rootfs を作成したい場合:
+
+```sh
+docker compose run --rm dmonitor install-rootfs
+docker compose up
+```
+
+UI はホスト側の `http://localhost:8080` で開きます。ID-50 などの実デバイスを使う場合は、ホスト側で `/dev/dstar` を作成してから `docker-compose.yml` の `devices` 設定を有効化してください。
+
+Make ターゲットも用意しています。
+
+```sh
+make docker-build
+make docker-install-rootfs
+make docker-up
+```
+
 ## API
 
 - `GET /api/status`

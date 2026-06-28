@@ -1,4 +1,4 @@
-.PHONY: fmt test build ui build-compat install-rootfs
+.PHONY: fmt test build ui build-compat install-rootfs docker-build docker-up docker-install-rootfs
 
 GO ?= go
 NPM ?= npm
@@ -26,3 +26,12 @@ build-compat:
 install-rootfs:
 	$(GO) run ./cmd/dmonitor-install
 	$(MAKE) build-compat
+
+docker-build:
+	docker build -t dmonitor-improved .
+
+docker-up:
+	docker compose up --build
+
+docker-install-rootfs:
+	docker compose run --rm dmonitor install-rootfs

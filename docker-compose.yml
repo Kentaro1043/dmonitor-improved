@@ -1,0 +1,17 @@
+services:
+  dmonitor:
+    build: .
+    image: dmonitor-improved:latest
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - dmonitor-rootfs:/var/lib/dmonitor/rootfs
+      - dmonitor-cache:/var/cache/dmonitor
+    restart: unless-stopped
+    # ID-50などの実デバイスを使う場合は、ホスト側で/dev/dstarを用意してから有効化してください。
+    # devices:
+    #   - /dev/dstar:/dev/dstar
+
+volumes:
+  dmonitor-rootfs:
+  dmonitor-cache:

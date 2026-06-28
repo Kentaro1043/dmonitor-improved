@@ -1,0 +1,13 @@
+.git
+.gitignore
+Dockerfile
+docker-compose.yml
+
+runtime/cache
+runtime/rootfs
+
+web/dist
+web/node_modules
+
+tmp
+*.log
