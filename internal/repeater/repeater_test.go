@@ -77,3 +77,32 @@ func TestParseRepeatersPrefersMonitorNamesAndActiveStatus(t *testing.T) {
 		t.Fatalf("active repeaters = %+v", activeRepeaters)
 	}
 }
+
+func TestParseRepeatersEnrichesRPTMastWithJSONMetadata(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "var", "www"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rptMast := "JP1YCD A世田谷430\nJP1YEM B木更津1200\n"
+	repeaterJSON := `{"Connected Table":[
+{"callsign":"JP1YCD A","ip_address":"27.91.220.53","port":51000,"status":"off","area":"1","zr_call":"JP1YCD  "},
+{"callsign":"JP1YEM B","ip_address":"203.0.113.12","port":51000,"status":"off","area":"1","zr_call":"JP1YEM  "}
+]}`
+	if err := os.WriteFile(filepath.Join(root, "var", "www", "rpt_mast.txt"), []byte(rptMast), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "var", "www", "repeater.json"), []byte(repeaterJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ParseRepeaters(root)
+	if len(got) != 2 {
+		t.Fatalf("len = %d", len(got))
+	}
+	if got[0].Address != "27.91.220.53" || got[0].Port != "51000" || got[0].Status != "off" || got[0].Area != "1" {
+		t.Fatalf("first repeater was not enriched: %+v", got[0])
+	}
+	if got[1].Address != "203.0.113.12" || got[1].Port != "51000" {
+		t.Fatalf("band text must not be treated as the UDP port: %+v", got[1])
+	}
+}

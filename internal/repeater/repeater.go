@@ -265,6 +265,16 @@ func enrichRepeaterMetadata(repeaters []Repeater, jsonByKey map[string]Repeater,
 	for idx := range repeaters {
 		key := repeaterKey(repeaters[idx])
 		if meta, ok := jsonByKey[key]; ok {
+			hasAddress := repeaters[idx].Address != ""
+			if repeaters[idx].Address == "" {
+				repeaters[idx].Address = meta.Address
+			}
+			if repeaters[idx].Port == "" || !hasAddress {
+				repeaters[idx].Port = meta.Port
+			}
+			if repeaters[idx].ZoneCallsign == "" || !hasAddress {
+				repeaters[idx].ZoneCallsign = meta.ZoneCallsign
+			}
 			if repeaters[idx].Status == "" {
 				repeaters[idx].Status = meta.Status
 			}
