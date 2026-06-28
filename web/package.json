@@ -9,6 +9,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.html\""
   },
   "dependencies": {
+    "@fontsource/noto-sans-jp": "^5.2.9",
     "@mantine/core": "^9.4.1",
     "@mantine/hooks": "^9.4.1",
     "@vitejs/plugin-react": "^4.3.4",
