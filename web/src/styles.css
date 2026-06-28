@@ -49,14 +49,6 @@ button:disabled {
   padding-bottom: 2px;
 }
 
-.logMessage {
-  min-width: 0;
-  flex: 1;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: "SFMono-Regular", Consolas, monospace;
-}
-
 @media (min-width: 1180px) {
   .workspaceGrid {
     align-items: start;

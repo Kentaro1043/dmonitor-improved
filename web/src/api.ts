@@ -56,12 +56,6 @@ export type Status = {
   config: Config;
 };
 
-export type LogEntry = {
-  time: string;
-  source: string;
-  message: string;
-};
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
@@ -76,7 +70,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: () => request<Status>("/api/status"),
-  logs: () => request<{ logs: LogEntry[] | null }>("/api/logs"),
   saveConfig: (config: Config) =>
     request<Config>("/api/config", {
       method: "PUT",

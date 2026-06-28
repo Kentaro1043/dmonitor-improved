@@ -38,7 +38,7 @@ import {
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRef } from "react";
 import type { ReactNode } from "react";
-import { api, Config, LogEntry, Repeater, Status } from "./api";
+import { api, Config, Repeater, Status } from "./api";
 
 const emptyConfig: Config = {
   rig: "ICOM",
@@ -49,7 +49,6 @@ const emptyConfig: Config = {
 
 export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [config, setConfig] = useState<Config>(emptyConfig);
   const configDirty = useRef(false);
   const [selected, setSelected] = useState<Repeater | null>(null);
@@ -68,15 +67,11 @@ export default function App() {
   const processRows = Object.values(processes);
 
   async function refresh(options: { syncConfig?: boolean } = {}) {
-    const [nextStatus, nextLogs] = await Promise.all([
-      api.status(),
-      api.logs(),
-    ]);
+    const nextStatus = await api.status();
     setStatus(nextStatus);
     if (options.syncConfig || !configDirty.current) {
       setConfig(nextStatus.config);
     }
-    setLogs((nextLogs.logs ?? []).slice(-80).reverse());
   }
 
   function updateConfig(patch: Partial<Config>) {
@@ -403,38 +398,6 @@ export default function App() {
                 </Button>
               </Stack>
             </Paper>
-
-            <Panel title="Logs" icon={<Activity size={18} />}>
-              <ScrollArea h={300} type="auto" offsetScrollbars>
-                <Stack gap="xs">
-                  {logs.map((entry, idx) => (
-                    <Paper
-                      key={`${entry.time}-${idx}`}
-                      p="xs"
-                      radius="sm"
-                      withBorder
-                    >
-                      <Group gap="xs" align="flex-start" wrap="nowrap">
-                        <Text size="xs" c="dimmed" w={160}>
-                          {entry.time.replace("T", " ").replace("Z", "")}
-                        </Text>
-                        <Badge variant="light" color="gray" miw={100}>
-                          {entry.source}
-                        </Badge>
-                        <Text className="logMessage" size="xs">
-                          {entry.message}
-                        </Text>
-                      </Group>
-                    </Paper>
-                  ))}
-                  {logs.length === 0 && (
-                    <Text size="sm" c="dimmed">
-                      No logs
-                    </Text>
-                  )}
-                </Stack>
-              </ScrollArea>
-            </Panel>
           </Stack>
 
           <Panel title="Repeaters" icon={<Search size={18} />}>
