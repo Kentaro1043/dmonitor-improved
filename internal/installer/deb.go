@@ -97,6 +97,9 @@ func extractTar(r io.Reader, name, rootfs string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
+			if err := removeExistingFile(target); err != nil {
+				return err
+			}
 			f, err := os.OpenFile(target, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.FileMode(h.Mode))
 			if err != nil {
 				return err
@@ -106,6 +109,9 @@ func extractTar(r io.Reader, name, rootfs string) error {
 				return err
 			}
 			if err := f.Close(); err != nil {
+				return err
+			}
+			if err := os.Chmod(target, os.FileMode(h.Mode)); err != nil {
 				return err
 			}
 		case tar.TypeSymlink:
@@ -121,11 +127,28 @@ func extractTar(r io.Reader, name, rootfs string) error {
 			if err != nil {
 				return err
 			}
+			if err := removeExistingFile(target); err != nil {
+				return err
+			}
 			if err := os.Link(linkTarget, target); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+func removeExistingFile(path string) error {
+	st, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if st.IsDir() {
+		return fmt.Errorf("cannot replace directory %s with file", path)
+	}
+	return os.Remove(path)
 }
 
 func safeJoin(rootfs, name string) (string, error) {
