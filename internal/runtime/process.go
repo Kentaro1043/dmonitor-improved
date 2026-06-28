@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -54,7 +55,7 @@ func (p *managedProcess) Start() error {
 	p.mu.Lock()
 	p.startedAt = time.Now()
 	p.mu.Unlock()
-	p.logs.Add(p.name, fmt.Sprintf("started pid=%d", p.cmd.Process.Pid))
+	p.logs.Add(p.name, fmt.Sprintf("started pid=%d command=%s", p.cmd.Process.Pid, strings.Join(p.cmd.Args, " ")))
 	go p.collect(stdout, "stdout")
 	go p.collect(stderr, "stderr")
 	go p.wait()

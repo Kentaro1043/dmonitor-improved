@@ -124,6 +124,17 @@ func (m *Manager) Connect(ctx context.Context, req Connection) error {
 		cfg, _ := config.Load(m.opts.RootFS)
 		req.ConnectCallsign = cfg.Callsign
 	}
+	if strings.TrimSpace(req.ConnectCallsign) == "" {
+		return m.recordError(errors.New("connect callsign is required"))
+	}
+	if strings.TrimSpace(req.AreaCallsign) == "" {
+		return m.recordError(errors.New("area callsign is required"))
+	}
+	req.ConnectCallsign = config.FormatCallsign(req.ConnectCallsign)
+	req.AreaCallsign = config.FormatCallsign(req.AreaCallsign)
+	if req.ZoneCallsign != "" {
+		req.ZoneCallsign = config.FormatCallsign(req.ZoneCallsign)
+	}
 	args := []string{req.ConnectCallsign, req.Address, req.Port, req.AreaCallsign}
 	if req.ZoneCallsign != "" {
 		args = append(args, req.ZoneCallsign)
