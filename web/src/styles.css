@@ -20,6 +20,18 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.appHeader {
+  row-gap: var(--mantine-spacing-xs);
+}
+
+.appTitleBlock {
+  min-width: 0;
+}
+
+.navbarActions {
+  max-width: 100%;
+}
+
 .workspaceGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -130,6 +142,17 @@ button:disabled {
   .workspaceGrid {
     align-items: start;
     grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .appTitleBlock,
+  .navbarActions {
+    width: 100%;
+  }
+
+  .navbarActions {
+    justify-content: flex-start;
   }
 }
 

@@ -264,8 +264,8 @@ function MainApp() {
   return (
     <Container fluid py="md" px={{ base: "sm", md: "lg" }}>
       <Stack gap="md">
-        <Group justify="space-between" align="flex-start">
-          <div>
+        <Group justify="space-between" align="flex-start" className="appHeader">
+          <div className="appTitleBlock">
             <Title order={1} size="h2">
               dmonitor improved
             </Title>
@@ -273,16 +273,30 @@ function MainApp() {
               {status?.runtime.rootfs ?? "runtime/rootfs"}
             </Text>
           </div>
-          <Tooltip label="更新">
-            <ActionIcon
-              variant="default"
-              size="lg"
-              onClick={() => void run("refresh", refresh)}
-              disabled={busy !== null}
-            >
-              <RefreshCw size={18} />
-            </ActionIcon>
-          </Tooltip>
+          <Group gap="xs" justify="flex-end" className="navbarActions">
+            {utilityPages.map((item) => (
+              <Tooltip key={item.id} label={item.description} openDelay={300}>
+                <Button
+                  variant="default"
+                  size="sm"
+                  leftSection={item.icon}
+                  onClick={() => openStandalonePage(item.path)}
+                >
+                  {item.label}
+                </Button>
+              </Tooltip>
+            ))}
+            <Tooltip label="更新">
+              <ActionIcon
+                variant="default"
+                size="lg"
+                onClick={() => void run("refresh", refresh)}
+                disabled={busy !== null}
+              >
+                <RefreshCw size={18} />
+              </ActionIcon>
+            </Tooltip>
+          </Group>
         </Group>
 
         {error && (
@@ -300,18 +314,6 @@ function MainApp() {
         <div className="workspaceGrid">
           <Stack gap="md" className="controlPane">
             <Panel title="Operations" icon={<Activity size={18} />}>
-              <SimpleGrid cols={2} spacing="xs">
-                {utilityPages.map((item) => (
-                  <Action
-                    key={item.id}
-                    icon={item.icon}
-                    label={item.label}
-                    description={item.description}
-                    busy={null}
-                    onClick={() => openStandalonePage(item.path)}
-                  />
-                ))}
-              </SimpleGrid>
               <SimpleGrid cols={2} spacing="xs">
                 {runtimeActions.map((item) => (
                   <Action
