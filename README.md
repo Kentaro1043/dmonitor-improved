@@ -78,5 +78,11 @@ make docker-up
 - `POST /api/buffer/increase`
 - `POST /api/buffer/decrease`
 - `GET /api/logs`
+- `GET /api/trust-access-log`
 
 backend は標準で `127.0.0.1:8080` にだけ bind します。LAN 公開は reverse proxy などで明示的に制御してください。
+
+## 別画面
+
+- `/dstar-log`: 全国D-STAR運用ログを表示します。
+- `/trust-access-log`: 管理サーバーへのテーブル書き換え要求一覧を表示します。

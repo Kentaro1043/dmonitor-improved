@@ -1,16 +1,22 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Kentaro1043/dmonitor-improved/internal/config"
 	"github.com/Kentaro1043/dmonitor-improved/internal/runtime"
 	"github.com/Kentaro1043/dmonitor-improved/internal/service"
 )
+
+const trustAccessLogURL = "http://log.d-star.info/usr/data.txt"
 
 type Server struct {
 	service   *service.Service
@@ -36,6 +42,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/buffer/increase", s.handleBufferIncrease)
 	mux.HandleFunc("POST /api/buffer/decrease", s.handleBufferDecrease)
 	mux.HandleFunc("GET /api/logs", s.handleLogs)
+	mux.HandleFunc("GET /api/trust-access-log", s.handleTrustAccessLog)
 	mux.Handle("/", s.staticHandler())
 	return s.localhostOnly(withJSON(mux))
 }
@@ -157,6 +164,35 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"logs": s.service.Logs()})
 }
 
+func (s *Server) handleTrustAccessLog(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, trustAccessLogURL, nil)
+	if err != nil {
+		writePlainError(w, http.StatusBadGateway, err)
+		return
+	}
+	req.Header.Set("User-Agent", "dmonitor-improved")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writePlainError(w, http.StatusBadGateway, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		writePlainError(w, http.StatusBadGateway, fmt.Errorf("upstream returned %s", resp.Status))
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, io.LimitReader(resp.Body, 1024*1024))
+}
+
 func (s *Server) staticHandler() http.Handler {
 	if s.staticDir == "" {
 		return http.NotFoundHandler()
@@ -205,4 +241,10 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeError(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+}
+
+func writePlainError(w http.ResponseWriter, code int, err error) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(code)
+	_, _ = fmt.Fprintln(w, err.Error())
 }

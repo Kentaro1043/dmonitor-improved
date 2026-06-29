@@ -68,6 +68,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+async function requestText(path: string): Promise<string> {
+  const response = await fetch(path);
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(text.trim() || response.statusText);
+  }
+  return text;
+}
+
 export const api = {
   status: () => request<Status>("/api/status"),
   saveConfig: (config: Config) =>
@@ -87,4 +96,5 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  trustAccessLog: () => requestText("/api/trust-access-log"),
 };

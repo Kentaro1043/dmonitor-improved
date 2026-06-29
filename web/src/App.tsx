@@ -24,6 +24,8 @@ import {
   Activity,
   CircleStop,
   Download,
+  ExternalLink,
+  FileText,
   Minus,
   Play,
   Plus,
@@ -40,6 +42,8 @@ import { useRef } from "react";
 import type { ReactNode } from "react";
 import { api, Config, Repeater, Status } from "./api";
 
+const DSTAR_OPERATION_LOG_URL = "http://log.d-star.info/usr/log_view.html";
+
 const emptyConfig: Config = {
   rig: "ICOM",
   lcd: "NONE",
@@ -48,6 +52,17 @@ const emptyConfig: Config = {
 };
 
 export default function App() {
+  const path = normalizePath(window.location.pathname);
+  if (path === "/dstar-log") {
+    return <DStarOperationLogPage />;
+  }
+  if (path === "/trust-access-log") {
+    return <TrustAccessLogPage />;
+  }
+  return <MainApp />;
+}
+
+function MainApp() {
   const [status, setStatus] = useState<Status | null>(null);
   const [config, setConfig] = useState<Config>(emptyConfig);
   const configDirty = useRef(false);
@@ -118,6 +133,22 @@ export default function App() {
     () => groupRepeatersByArea(repeaters),
     [repeaters],
   );
+  const utilityPages = [
+    {
+      id: "dstar-log",
+      icon: <FileText size={16} />,
+      label: "運用ログ",
+      description: "全国のD-STAR運用ログを別画面で開く",
+      path: "/dstar-log",
+    },
+    {
+      id: "trust-access-log",
+      icon: <ExternalLink size={16} />,
+      label: "テーブル要求",
+      description: "管理サーバーへのテーブル書き換え要求を別画面で開く",
+      path: "/trust-access-log",
+    },
+  ];
 
   function submitConfig(event: FormEvent) {
     event.preventDefault();
@@ -269,6 +300,18 @@ export default function App() {
         <div className="workspaceGrid">
           <Stack gap="md" className="controlPane">
             <Panel title="Operations" icon={<Activity size={18} />}>
+              <SimpleGrid cols={2} spacing="xs">
+                {utilityPages.map((item) => (
+                  <Action
+                    key={item.id}
+                    icon={item.icon}
+                    label={item.label}
+                    description={item.description}
+                    busy={null}
+                    onClick={() => openStandalonePage(item.path)}
+                  />
+                ))}
+              </SimpleGrid>
               <SimpleGrid cols={2} spacing="xs">
                 {runtimeActions.map((item) => (
                   <Action
@@ -468,6 +511,114 @@ export default function App() {
             </Stack>
           </Panel>
         </div>
+      </Stack>
+    </Container>
+  );
+}
+
+function DStarOperationLogPage() {
+  return (
+    <UtilityPage
+      title="全国D-STAR運用ログ"
+      actions={
+        <Tooltip label="外部ページを開く">
+          <ActionIcon
+            component="a"
+            href={DSTAR_OPERATION_LOG_URL}
+            target="_blank"
+            rel="noreferrer"
+            variant="default"
+            size="lg"
+          >
+            <ExternalLink size={18} />
+          </ActionIcon>
+        </Tooltip>
+      }
+    >
+      <iframe
+        className="utilityFrame"
+        src={DSTAR_OPERATION_LOG_URL}
+        title="全国D-STAR運用ログ"
+      />
+    </UtilityPage>
+  );
+}
+
+function TrustAccessLogPage() {
+  const [log, setLog] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refreshTrustAccessLog() {
+    try {
+      const text = await api.trustAccessLog();
+      setLog(text);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshTrustAccessLog();
+    const id = window.setInterval(() => void refreshTrustAccessLog(), 5000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <UtilityPage
+      title="テーブル書き換え要求"
+      actions={
+        <Tooltip label="更新">
+          <ActionIcon
+            variant="default"
+            size="lg"
+            onClick={() => void refreshTrustAccessLog()}
+          >
+            <RefreshCw size={18} />
+          </ActionIcon>
+        </Tooltip>
+      }
+    >
+      <Paper withBorder radius="md" p="md" className="trustLogPanel">
+        {error ? (
+          <Alert color="red" variant="light">
+            {error}
+          </Alert>
+        ) : (
+          <pre className="trustLogText">
+            {loading ? "Loading..." : log || "No data"}
+          </pre>
+        )}
+      </Paper>
+    </UtilityPage>
+  );
+}
+
+function UtilityPage({
+  title,
+  actions,
+  children,
+}: {
+  title: string;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <Container fluid p="sm" className="utilityPage">
+      <Stack gap="sm" className="utilityLayout">
+        <Group justify="space-between" gap="sm" className="utilityToolbar">
+          <Group gap="xs">
+            <FileText size={18} />
+            <Title order={1} size="h3">
+              {title}
+            </Title>
+          </Group>
+          {actions}
+        </Group>
+        <div className="utilityContent">{children}</div>
       </Stack>
     </Container>
   );
@@ -721,4 +872,12 @@ function statusColor(status?: string) {
   if (status === "on") return "blue";
   if (status === "off") return "gray";
   return "gray";
+}
+
+function normalizePath(path: string) {
+  return path.length > 1 ? path.replace(/\/+$/, "") : path;
+}
+
+function openStandalonePage(path: string) {
+  window.open(path, "_blank", "noopener,noreferrer,width=1100,height=760");
 }
