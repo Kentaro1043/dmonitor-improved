@@ -57,7 +57,10 @@ type Snapshot struct {
 
 func NewManager(opts Options) *Manager {
 	if opts.QEMUPath == "" {
-		opts.QEMUPath = "qemu-arm"
+		opts.QEMUPath = os.Getenv("DMONITOR_QEMU")
+	}
+	if opts.QEMUPath == "" {
+		opts.QEMUPath = DefaultQEMUPath
 	}
 	if opts.DStarDevicePath == "" {
 		opts.DStarDevicePath = os.Getenv("DMONITOR_DSTAR_DEVICE")
@@ -84,7 +87,7 @@ func (m *Manager) DStarDevicePath() string { return m.opts.DStarDevicePath }
 func (m *Manager) LogInventory() {
 	qemu, qemuErr := exec.LookPath(m.opts.QEMUPath)
 	if qemuErr != nil {
-		m.logger.Error("qemu-arm not found", "qemu", m.opts.QEMUPath, "error", qemuErr)
+		m.logger.Error("qemu-arm not found", "qemu", m.opts.QEMUPath, "error", qemuNotFoundError(m.opts.QEMUPath, qemuErr))
 	} else {
 		m.logger.Info("qemu-arm found", "qemu", qemu)
 	}
@@ -310,7 +313,7 @@ func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 	m.logger.Info("runtime binary ready", "process", name, "path", bin, "mode", binStat.Mode().String(), "size", binStat.Size())
 	qemu, err := exec.LookPath(m.opts.QEMUPath)
 	if err != nil {
-		return m.recordError(fmt.Errorf("qemu-arm not found: %w", err))
+		return m.recordError(qemuNotFoundError(m.opts.QEMUPath, err))
 	}
 	m.logger.Info("qemu executable ready", "process", name, "qemu", qemu)
 

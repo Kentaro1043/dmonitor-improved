@@ -106,7 +106,7 @@ func readTrim(path string) string {
 func UdevHint(devicePath string) string {
 	devicePath = normalizeDevicePath(devicePath)
 	if runtime.GOOS == "darwin" {
-		return "macOS does not allow creating /dev/dstar directly. Start with -dstar-device /dev/cu.<device> or set DMONITOR_DSTAR_DEVICE=/dev/cu.<device>."
+		return "macOS can run the API/UI, but the official armhf runtime needs Linux qemu-arm. Run the runtime inside Linux and set -dstar-device/DMONITOR_DSTAR_DEVICE to the Linux-visible serial device path."
 	}
 	if devicePath != "/dev/dstar" {
 		return "The configured host device is mapped to the guest /dev/dstar path by the compatibility preload layer."

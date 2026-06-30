@@ -24,14 +24,22 @@ npm --prefix web run build
 go run ./cmd/dmonitor-improved
 ```
 
-`nix develop` で `go`、`npm`、`qemu-arm`、`gpg`、`file`、`curl`、`arm-linux-gnueabihf-gcc` など、実行と検証に必要なツールが入った devShell に入れます。
+`nix develop` で `go`、`npm`、`gpg`、`file`、`curl`、`arm-linux-gnueabihf-gcc` など、実行と検証に必要なツールが入った devShell に入れます。Linux の devShell では dmonitor 実行に必要な `qemu-arm` も入ります。
 
-標準ではゲスト側の `/dev/dstar` をホスト側の `/dev/dstar` に対応させます。macOS は `/dev` に `dstar` シンボリックリンクを作成できないため、実デバイスを直接指定してください。
+macOS では QEMU の user-mode emulation で Linux armhf バイナリを直接起動できないため、`qemu-arm` が利用できません。`cmd/dmonitor-improved` の API/UI 開発や rootfs 展開はできますが、`dmonitor`、`rpt_conn` などの公式 armhf バイナリを起動する実行環境は Linux ホスト、Linux VM、または Linux コンテナ内で動かしてください。QEMU のパスを明示する場合は次のように指定できます。
 
 ```sh
-DMONITOR_DSTAR_DEVICE=/dev/cu.usbserial-XXXX go run ./cmd/dmonitor-improved
+DMONITOR_QEMU=/path/to/qemu-arm go run ./cmd/dmonitor-improved
 # または
-go run ./cmd/dmonitor-improved -dstar-device /dev/cu.usbserial-XXXX
+go run ./cmd/dmonitor-improved -qemu /path/to/qemu-arm
+```
+
+標準ではゲスト側の `/dev/dstar` をホスト側の `/dev/dstar` に対応させます。udev を使わない環境では、実デバイスを直接指定してください。
+
+```sh
+DMONITOR_DSTAR_DEVICE=/dev/ttyUSB0 go run ./cmd/dmonitor-improved
+# または
+go run ./cmd/dmonitor-improved -dstar-device /dev/ttyUSB0
 ```
 
 指定したホスト側デバイスは、互換 `LD_PRELOAD` により dmonitor バイナリからは従来通り `/dev/dstar` として見えます。
