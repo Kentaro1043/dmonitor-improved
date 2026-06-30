@@ -41,6 +41,16 @@ static FILE *(*real_fopen_fn)(const char *, const char *) = NULL;
 static void *(*real_mmap_fn)(void *, size_t, int, int, int, off_t) = NULL;
 static int (*real_system_fn)(const char *) = NULL;
 static int (*real_close_fn)(int) = NULL;
+static int (*real_stat_fn)(const char *, struct stat *) = NULL;
+static int (*real_stat64_fn)(const char *, struct stat64 *) = NULL;
+static int (*real_lstat_fn)(const char *, struct stat *) = NULL;
+static int (*real_lstat64_fn)(const char *, struct stat64 *) = NULL;
+static int (*real_xstat_fn)(int, const char *, struct stat *) = NULL;
+static int (*real_xstat64_fn)(int, const char *, struct stat64 *) = NULL;
+static int (*real_lxstat_fn)(int, const char *, struct stat *) = NULL;
+static int (*real_lxstat64_fn)(int, const char *, struct stat64 *) = NULL;
+static int (*real_access_fn)(const char *, int) = NULL;
+static int (*real_faccessat_fn)(int, const char *, int, int) = NULL;
 
 static int dummy_gpio_fds[32];
 
@@ -52,6 +62,16 @@ static void load_symbols(void) {
     real_mmap_fn = dlsym(RTLD_NEXT, "mmap");
     real_system_fn = dlsym(RTLD_NEXT, "system");
     real_close_fn = dlsym(RTLD_NEXT, "close");
+    real_stat_fn = dlsym(RTLD_NEXT, "stat");
+    real_stat64_fn = dlsym(RTLD_NEXT, "stat64");
+    real_lstat_fn = dlsym(RTLD_NEXT, "lstat");
+    real_lstat64_fn = dlsym(RTLD_NEXT, "lstat64");
+    real_xstat_fn = dlsym(RTLD_NEXT, "__xstat");
+    real_xstat64_fn = dlsym(RTLD_NEXT, "__xstat64");
+    real_lxstat_fn = dlsym(RTLD_NEXT, "__lxstat");
+    real_lxstat64_fn = dlsym(RTLD_NEXT, "__lxstat64");
+    real_access_fn = dlsym(RTLD_NEXT, "access");
+    real_faccessat_fn = dlsym(RTLD_NEXT, "faccessat");
   }
 }
 
@@ -96,6 +116,25 @@ static int is_dummy_gpio_fd(int fd) {
   return 0;
 }
 
+static char *dup_string(const char *value) {
+  size_t len = strlen(value) + 1;
+  char *out = malloc(len);
+  if (!out) {
+    return NULL;
+  }
+  memcpy(out, value, len);
+  return out;
+}
+
+static char *rewrite_dstar_path(const char *path) {
+  const char *device = getenv("DMONITOR_DSTAR_DEVICE");
+  if (!path || strcmp(path, "/dev/dstar") != 0 || !device || device[0] == '\0' ||
+      strcmp(device, "/dev/dstar") == 0) {
+    return NULL;
+  }
+  return dup_string(device);
+}
+
 static void untrack_dummy_gpio_fd(int fd) {
   for (size_t i = 0; i < sizeof(dummy_gpio_fds) / sizeof(dummy_gpio_fds[0]); i++) {
     if (dummy_gpio_fds[i] == fd) {
@@ -112,6 +151,11 @@ static int open_dummy_gpio(void) {
 }
 
 static char *rewrite_path(const char *path) {
+  char *device = rewrite_dstar_path(path);
+  if (device) {
+    return device;
+  }
+
   const char *root = getenv("DMONITOR_HOST_ROOTFS");
   if (!path || !root || root[0] == '\0') {
     return NULL;
@@ -239,6 +283,118 @@ FILE *fopen(const char *pathname, const char *mode) {
 
 FILE *fopen64(const char *pathname, const char *mode) {
   return fopen(pathname, mode);
+}
+
+int stat(const char *pathname, struct stat *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_stat_fn(rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_stat_fn(pathname, statbuf);
+}
+
+int stat64(const char *pathname, struct stat64 *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_stat64_fn(rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_stat64_fn(pathname, statbuf);
+}
+
+int lstat(const char *pathname, struct stat *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_lstat_fn(rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_lstat_fn(pathname, statbuf);
+}
+
+int lstat64(const char *pathname, struct stat64 *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_lstat64_fn(rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_lstat64_fn(pathname, statbuf);
+}
+
+int __xstat(int ver, const char *pathname, struct stat *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_xstat_fn(ver, rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_xstat_fn(ver, pathname, statbuf);
+}
+
+int __xstat64(int ver, const char *pathname, struct stat64 *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_xstat64_fn(ver, rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_xstat64_fn(ver, pathname, statbuf);
+}
+
+int __lxstat(int ver, const char *pathname, struct stat *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_lxstat_fn(ver, rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_lxstat_fn(ver, pathname, statbuf);
+}
+
+int __lxstat64(int ver, const char *pathname, struct stat64 *statbuf) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_lxstat64_fn(ver, rewritten, statbuf);
+    free(rewritten);
+    return ret;
+  }
+  return real_lxstat64_fn(ver, pathname, statbuf);
+}
+
+int access(const char *pathname, int mode) {
+  load_symbols();
+  char *rewritten = rewrite_path(pathname);
+  if (rewritten) {
+    int ret = real_access_fn(rewritten, mode);
+    free(rewritten);
+    return ret;
+  }
+  return real_access_fn(pathname, mode);
+}
+
+int faccessat(int dirfd, const char *pathname, int mode, int flags) {
+  load_symbols();
+  if (pathname[0] == '/') {
+    char *rewritten = rewrite_path(pathname);
+    if (rewritten) {
+      int ret = real_faccessat_fn(AT_FDCWD, rewritten, mode, flags);
+      free(rewritten);
+      return ret;
+    }
+  }
+  return real_faccessat_fn(dirfd, pathname, mode, flags);
 }
 
 void *mmap(void *addr, size_t length, int prot, int flags, int fd, off_t offset) {

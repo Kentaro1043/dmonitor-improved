@@ -22,6 +22,7 @@ type Options struct {
 	RootFS           string
 	QEMUPath         string
 	GuestPreloadPath string
+	DStarDevicePath  string
 	Logger           *slog.Logger
 }
 
@@ -58,6 +59,12 @@ func NewManager(opts Options) *Manager {
 	if opts.QEMUPath == "" {
 		opts.QEMUPath = "qemu-arm"
 	}
+	if opts.DStarDevicePath == "" {
+		opts.DStarDevicePath = os.Getenv("DMONITOR_DSTAR_DEVICE")
+	}
+	if opts.DStarDevicePath == "" {
+		opts.DStarDevicePath = "/dev/dstar"
+	}
 	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -72,6 +79,8 @@ func NewManager(opts Options) *Manager {
 
 func (m *Manager) RootFS() string { return m.opts.RootFS }
 
+func (m *Manager) DStarDevicePath() string { return m.opts.DStarDevicePath }
+
 func (m *Manager) LogInventory() {
 	qemu, qemuErr := exec.LookPath(m.opts.QEMUPath)
 	if qemuErr != nil {
@@ -79,7 +88,7 @@ func (m *Manager) LogInventory() {
 	} else {
 		m.logger.Info("qemu-arm found", "qemu", qemu)
 	}
-	m.logger.Info("runtime rootfs configured", "rootfs", m.opts.RootFS, "preload", m.opts.GuestPreloadPath)
+	m.logger.Info("runtime rootfs configured", "rootfs", m.opts.RootFS, "preload", m.opts.GuestPreloadPath, "dstar_device", m.opts.DStarDevicePath)
 	for _, name := range managedProcessNames {
 		path := m.binPath(name)
 		st, err := os.Stat(path)
@@ -313,7 +322,11 @@ func (m *Manager) Start(_ context.Context, name string, args ...string) error {
 		m.logger.Warn("compat preload not found; starting without LD_PRELOAD", "process", name, "configured", m.opts.GuestPreloadPath)
 	}
 	cmdArgs = append(cmdArgs, "-E", "LD_LIBRARY_PATH="+qemuLibraryPath(m.opts.RootFS))
-	cmdArgs = append(cmdArgs, "-E", "DMONITOR_HOST_ROOTFS="+m.opts.RootFS, bin)
+	cmdArgs = append(cmdArgs,
+		"-E", "DMONITOR_HOST_ROOTFS="+m.opts.RootFS,
+		"-E", "DMONITOR_DSTAR_DEVICE="+m.opts.DStarDevicePath,
+		bin,
+	)
 	cmdArgs = append(cmdArgs, args...)
 	cmd := exec.Command(qemu, cmdArgs...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

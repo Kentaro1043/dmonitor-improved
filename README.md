@@ -26,6 +26,16 @@ go run ./cmd/dmonitor-improved
 
 `nix develop` で `go`、`npm`、`qemu-arm`、`gpg`、`file`、`curl`、`arm-linux-gnueabihf-gcc` など、実行と検証に必要なツールが入った devShell に入れます。
 
+標準ではゲスト側の `/dev/dstar` をホスト側の `/dev/dstar` に対応させます。macOS は `/dev` に `dstar` シンボリックリンクを作成できないため、実デバイスを直接指定してください。
+
+```sh
+DMONITOR_DSTAR_DEVICE=/dev/cu.usbserial-XXXX go run ./cmd/dmonitor-improved
+# または
+go run ./cmd/dmonitor-improved -dstar-device /dev/cu.usbserial-XXXX
+```
+
+指定したホスト側デバイスは、互換 `LD_PRELOAD` により dmonitor バイナリからは従来通り `/dev/dstar` として見えます。
+
 udev ルールを導入する場合:
 
 ```sh

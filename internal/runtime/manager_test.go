@@ -99,6 +99,59 @@ func TestConnectRejectsBlankConnectCallsign(t *testing.T) {
 	}
 }
 
+func TestStartPassesConfiguredDStarDeviceToGuest(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "usr", "bin", "dmonitor")
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "var", "www"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' \"$DMONITOR_DSTAR_DEVICE\" > \"$DMONITOR_DEVICE_FILE\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	qemu := filepath.Join(root, "fake-qemu")
+	if err := os.WriteFile(qemu, []byte(`#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -L) shift 2 ;;
+    -E) export "$2"; shift 2 ;;
+    *) exec "$@" ;;
+  esac
+done
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deviceFile := filepath.Join(root, "device.txt")
+	t.Setenv("DMONITOR_DEVICE_FILE", deviceFile)
+
+	manager := NewManager(Options{
+		RootFS:          root,
+		QEMUPath:        qemu,
+		DStarDevicePath: "/dev/cu.usbserial-test",
+	})
+	if err := manager.Start(context.Background(), "dmonitor"); err != nil {
+		t.Fatal(err)
+	}
+
+	var got []byte
+	var err error
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		got, err = os.ReadFile(deviceFile)
+		if err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "/dev/cu.usbserial-test\n" {
+		t.Fatalf("DMONITOR_DSTAR_DEVICE = %q", got)
+	}
+}
+
 func TestUnmanagedExecutableProcessIsDiscoveredAndStopped(t *testing.T) {
 	root := t.TempDir()
 	bin := filepath.Join(root, "usr", "bin", "dmonitor")

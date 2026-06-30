@@ -18,6 +18,7 @@ func main() {
 	qemu := flag.String("qemu", "qemu-arm", "qemu-arm executable")
 	staticDir := flag.String("static", filepath.Join("web", "dist"), "static UI directory")
 	preload := flag.String("preload", "/usr/lib/dmonitor-compat.so", "guest LD_PRELOAD path")
+	dstarDevice := flag.String("dstar-device", envOrDefault("DMONITOR_DSTAR_DEVICE", "/dev/dstar"), "host D-STAR device path mapped to guest /dev/dstar")
 	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
 
@@ -33,6 +34,7 @@ func main() {
 		RootFS:           absRootfs,
 		QEMUPath:         *qemu,
 		GuestPreloadPath: *preload,
+		DStarDevicePath:  *dstarDevice,
 		Logger:           logger,
 	})
 	defer manager.Shutdown()
@@ -46,6 +48,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func newLogger(level string) *slog.Logger {

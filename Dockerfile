@@ -47,6 +47,7 @@ ENV DMONITOR_ADDR=0.0.0.0:8080 \
   DMONITOR_STATIC=/usr/share/dmonitor-improved/web \
   DMONITOR_QEMU=qemu-arm \
   DMONITOR_PRELOAD=/usr/lib/dmonitor-compat.so \
+  DMONITOR_DSTAR_DEVICE=/dev/dstar \
   DMONITOR_LOG_LEVEL=info \
   DMONITOR_AUTO_INSTALL=1
 

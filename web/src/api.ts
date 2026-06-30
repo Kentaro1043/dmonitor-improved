@@ -45,6 +45,7 @@ export type Status = {
     activeRepeaters?: Repeater[];
   };
   device: {
+    devicePath: string;
     dstarExists: boolean;
     dstarTarget?: string;
     ttyACM0Exists: boolean;
