@@ -20,13 +20,6 @@
         armhfGcc = pkgs.writeShellScriptBin "arm-linux-gnueabihf-gcc" ''
           exec ${armhfCC}/bin/${armhfCC.targetPrefix}gcc "$@"
         '';
-        linuxOnlyPackages = pkgs.lib.optionals pkgs.stdenv.isLinux [
-          pkgs.qemu
-        ];
-        qemuNote =
-          if pkgs.stdenv.isLinux
-          then "qemu-arm"
-          else "qemu-arm is unavailable on Darwin; run the official armhf binaries inside Linux";
       in {
         default = pkgs.mkShell {
           packages = [
@@ -42,14 +35,15 @@
             pkgs.gnupg
             pkgs.go
             pkgs.nodejs_22
+            pkgs.qemu
             pkgs.ripgrep
             armhfGcc
-          ] ++ linuxOnlyPackages;
+          ];
 
           shellHook = ''
             export CC_ARMHF=arm-linux-gnueabihf-gcc
             export GOTOOLCHAIN=local
-            echo "dmonitor-improved devShell: go, npm, gpg, file, armhf gcc, and ${qemuNote}."
+            echo "dmonitor-improved devShell: go, npm, qemu-arm, gpg, file, and armhf gcc are available."
           '';
         };
       }

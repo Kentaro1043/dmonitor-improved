@@ -177,7 +177,7 @@ function MainApp() {
       icon: <Radio size={18} />,
       label: "Device",
       value: status?.device.dstarExists
-        ? (status.device.dstarTarget ?? status.device.devicePath)
+        ? "/dev/dstar"
         : status?.device.ttyACM0Exists
           ? "/dev/ttyACM0"
           : "not found",

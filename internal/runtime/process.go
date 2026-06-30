@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -288,9 +287,6 @@ func findProcessPIDs(match func([]string) bool, excludePID int) []int {
 	if match == nil {
 		return nil
 	}
-	if goruntime.GOOS != "linux" {
-		return findProcessPIDsByPS(match, excludePID)
-	}
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil
@@ -316,31 +312,6 @@ func findProcessPIDs(match func([]string) bool, excludePID int) []int {
 		}
 	}
 	return out
-}
-
-func findProcessPIDsByPS(match func([]string) bool, excludePID int) []int {
-	out, err := exec.Command("ps", "-axo", "pid=,stat=,command=").Output()
-	if err != nil {
-		return nil
-	}
-	var pids []int
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[0])
-		if err != nil || pid == excludePID {
-			continue
-		}
-		if strings.HasPrefix(fields[1], "Z") {
-			continue
-		}
-		if match(fields[2:]) {
-			pids = append(pids, pid)
-		}
-	}
-	return pids
 }
 
 func commandLineMatches(parts []string, args []string) bool {
@@ -379,13 +350,6 @@ func splitCmdline(cmdline []byte) []string {
 }
 
 func processIsZombie(pid int) bool {
-	if goruntime.GOOS != "linux" {
-		out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
-		if err != nil {
-			return false
-		}
-		return strings.HasPrefix(strings.TrimSpace(string(out)), "Z")
-	}
 	b, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
 		return false

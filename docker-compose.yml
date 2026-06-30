@@ -6,10 +6,6 @@ services:
     volumes:
       - dmonitor-rootfs:/var/lib/dmonitor/rootfs
       - dmonitor-cache:/var/cache/dmonitor
-    environment:
-      # macOSやudevを使わない環境では、ホスト上の実デバイスパスに変更してください。
-      # 例: /dev/cu.usbserial-XXXX
-      DMONITOR_DSTAR_DEVICE: /dev/dstar
     restart: unless-stopped
     # ID-50などの実デバイスを使う場合は、ホスト側で/dev/dstarを用意してから有効化してください。
     # devices:

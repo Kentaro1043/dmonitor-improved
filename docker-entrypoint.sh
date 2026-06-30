@@ -38,7 +38,6 @@ if [ "$#" -eq 0 ] || [ "${1#-}" != "$1" ]; then
     -qemu "${DMONITOR_QEMU:-qemu-arm}" \
     -static "${DMONITOR_STATIC:-/usr/share/dmonitor-improved/web}" \
     -preload "${DMONITOR_PRELOAD:-/usr/lib/dmonitor-compat.so}" \
-    -dstar-device "${DMONITOR_DSTAR_DEVICE:-/dev/dstar}" \
     -log-level "${DMONITOR_LOG_LEVEL:-info}" \
     "$@"
 fi

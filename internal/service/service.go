@@ -46,8 +46,8 @@ func (s *Service) Status() Status {
 			Repeaters: nonNilRepeaters(repeater.ParseRepeaters(s.manager.RootFS())),
 			Active:    nonNilRepeaters(repeater.ParseActiveRepeaters(s.manager.RootFS())),
 		},
-		Device:   device.Detect(s.manager.DStarDevicePath()),
-		UdevHint: device.UdevHint(s.manager.DStarDevicePath()),
+		Device:   device.Detect(),
+		UdevHint: device.UdevHint(),
 		Config:   cfg,
 	}
 }
