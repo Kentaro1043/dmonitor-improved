@@ -8,10 +8,7 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.22-bookworm AS go-builder
-
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+FROM golang:1.22-bookworm AS go-builder
 
 WORKDIR /src
 RUN apt-get update \
@@ -25,8 +22,8 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY compat/ ./compat/
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/dmonitor-improved ./cmd/dmonitor-improved \
-  && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/dmonitor-install ./cmd/dmonitor-install \
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dmonitor-improved ./cmd/dmonitor-improved \
+  && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/dmonitor-install ./cmd/dmonitor-install \
   && arm-linux-gnueabihf-gcc -shared -fPIC -O2 -Wall -Wextra -o /out/dmonitor-compat.so compat/dmonitor_compat.c -ldl
 
 FROM debian:bookworm-slim AS runtime
