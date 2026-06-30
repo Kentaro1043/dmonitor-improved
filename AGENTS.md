@@ -3,6 +3,7 @@
 ## Git Commit
 
 機能の実装や修正が完了した段階でGit Commitを行ってください。
+ただし、`docker-compose.yml`に関してはデバイス固有の変更が多いため、そのような変更はコミットしないでください。
 Conventional Commit規約とGitmojiを使用し、コミットメッセージは日本語で書いてください。例を以下に示します。
 
 > feat: ✨ 新規機能を実装
